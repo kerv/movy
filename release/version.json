@@ -1,6 +1,6 @@
 {
-  "versionCode": 10,
-  "versionName": "1.9",
+  "versionCode": 11,
+  "versionName": "1.10",
   "apkUrl": "https://kerv.github.io/movy/movy.apk",
-  "notes": "One remote press now pauses, even when the player drops it. Phones browse in portrait or landscape and rotate to landscape for playback. Updates hand off to the installer reliably."
+  "notes": "Update delivery moved to GitHub Pages. This 1.10 build is served and self-updated from https://kerv.github.io/movy/ — if you received it automatically, GitHub-hosted updates are working. No functional changes."
 }
