@@ -58,14 +58,8 @@ jobs:
           mkdir -p site
           cp app/build/outputs/apk/release/app-release.apk site/movy.apk
           cp release/version.json site/version.json
-          # A tiny landing page is handy for humans hitting the URL directly.
-          cat > site/index.html <<'HTML'
-          <!doctype html>
-          <meta charset="utf-8">
-          <title>Movy TV</title>
-          <h1>Movy TV</h1>
-          <p><a href="movy.apk">Download APK</a> &middot; <a href="version.json">version.json</a></p>
-          HTML
+          # Landing page (lives in web/, shows the live version via version.json).
+          cp web/index.html site/index.html
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

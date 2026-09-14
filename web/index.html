@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Movy TV — Android TV app</title>
+<meta name="description" content="Movy TV: an Android TV app that wraps movy.sx for the remote, with ad blocking, D-pad navigation, and automatic updates.">
+<meta property="og:title" content="Movy TV">
+<meta property="og:description" content="Android TV app for movy.sx — remote-friendly, ad-blocked, self-updating.">
+<meta property="og:type" content="website">
+<style>
+  :root{
+    --red:#E50914;
+    --red-hi:#ff2530;
+    --bg:#0B0B14;
+    --bg-2:#12121f;
+    --card:#181826;
+    --line:#26263a;
+    --text:#f4f4f8;
+    --muted:#a3a3b8;
+    --radius:16px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--text);
+    background:
+      radial-gradient(1100px 600px at 50% -10%, rgba(229,9,20,.22), transparent 60%),
+      linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+    background-attachment:fixed;
+    min-height:100vh;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:880px;margin:0 auto;padding:64px 20px 96px}
+  header{text-align:center;margin-bottom:48px}
+  .logo{
+    display:inline-flex;align-items:center;gap:14px;
+    font-weight:800;font-size:20px;letter-spacing:.5px;
+    padding:10px 16px;border:1px solid var(--line);border-radius:999px;
+    background:rgba(255,255,255,.03);
+  }
+  .logo .dot{
+    width:26px;height:26px;border-radius:50%;
+    background:var(--red);position:relative;flex:none;
+    box-shadow:0 0 0 4px rgba(229,9,20,.18);
+  }
+  .logo .dot::after{
+    content:"";position:absolute;top:50%;left:54%;transform:translate(-50%,-50%);
+    border-style:solid;border-width:6px 0 6px 10px;
+    border-color:transparent transparent transparent #fff;
+  }
+  h1{font-size:clamp(34px,6vw,56px);line-height:1.05;margin:34px 0 12px;letter-spacing:-.5px}
+  h1 .accent{color:var(--red-hi)}
+  .tagline{color:var(--muted);font-size:clamp(16px,2.4vw,19px);max-width:560px;margin:0 auto}
+
+  .cta{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin:38px 0 8px}
+  .btn{
+    display:inline-flex;align-items:center;gap:10px;
+    padding:15px 26px;border-radius:12px;font-weight:700;font-size:16px;
+    text-decoration:none;transition:transform .12s ease, box-shadow .12s ease, background .12s ease;
+    border:1px solid transparent;
+  }
+  .btn.primary{background:var(--red);color:#fff;box-shadow:0 10px 30px rgba(229,9,20,.35)}
+  .btn.primary:hover{background:var(--red-hi);transform:translateY(-2px);box-shadow:0 14px 36px rgba(229,9,20,.45)}
+  .btn.ghost{background:rgba(255,255,255,.04);color:var(--text);border-color:var(--line)}
+  .btn.ghost:hover{background:rgba(255,255,255,.08);transform:translateY(-2px)}
+  .version{
+    text-align:center;color:var(--muted);font-size:14px;margin-top:6px;
+  }
+  .version b{color:var(--text);font-weight:700}
+
+  .features{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+    gap:16px;margin:56px 0;
+  }
+  .feature{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:22px 20px;
+  }
+  .feature .ico{
+    width:40px;height:40px;border-radius:10px;display:grid;place-items:center;
+    background:rgba(229,9,20,.14);color:var(--red-hi);font-size:20px;margin-bottom:12px;
+  }
+  .feature h3{margin:0 0 6px;font-size:16px}
+  .feature p{margin:0;color:var(--muted);font-size:14px}
+
+  .install{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:26px 24px;margin-top:8px;
+  }
+  .install h2{margin:0 0 16px;font-size:20px}
+  ol{margin:0;padding-left:20px;color:var(--muted)}
+  ol li{margin:8px 0}
+  ol li b{color:var(--text)}
+  code{
+    background:rgba(255,255,255,.06);border:1px solid var(--line);
+    padding:2px 7px;border-radius:6px;font-size:13px;color:#ffd7d9;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  .note{
+    margin-top:18px;padding:14px 16px;border-radius:10px;font-size:13.5px;
+    background:rgba(229,9,20,.08);border:1px solid rgba(229,9,20,.28);color:#ffc9cc;
+  }
+
+  footer{margin-top:64px;text-align:center;color:var(--muted);font-size:13px}
+  footer a{color:var(--muted)}
+  a{color:var(--red-hi)}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <span class="logo"><span class="dot"></span> MOVY&nbsp;TV</span>
+      <h1>Watch <span class="accent">movy.sx</span><br>on your TV.</h1>
+      <p class="tagline">A remote-friendly Android&nbsp;TV wrapper for movy.sx — ad-blocked, D-pad navigable, and self-updating. Runs on TV boxes, phones, and tablets.</p>
+
+      <div class="cta">
+        <a class="btn primary" href="movy.apk" download>⬇ Download APK</a>
+        <a class="btn ghost" href="version.json">View manifest</a>
+      </div>
+      <p class="version">Latest release: <b>v<span id="ver">…</span></b> <span id="code"></span></p>
+    </header>
+
+    <section class="features">
+      <div class="feature">
+        <div class="ico">📺</div>
+        <h3>Built for the remote</h3>
+        <p>Geometric D-pad navigation with a visible focus ring and media-key play/pause &amp; seek.</p>
+      </div>
+      <div class="feature">
+        <div class="ico">🛡️</div>
+        <h3>Ads &amp; popups blocked</h3>
+        <p>Network-level and structural blocking removes ads and the "confirm you're not a robot" gate.</p>
+      </div>
+      <div class="feature">
+        <div class="ico">🎬</div>
+        <h3>Full player control</h3>
+        <p>Pause, resume, quality, subtitles, and the episode drawer — all driven from the remote.</p>
+      </div>
+      <div class="feature">
+        <div class="ico">📱</div>
+        <h3>Phones &amp; tablets</h3>
+        <p>Browse in portrait or landscape; playback rotates to landscape automatically.</p>
+      </div>
+      <div class="feature">
+        <div class="ico">🔄</div>
+        <h3>Automatic updates</h3>
+        <p>The app checks this page on launch and installs new versions itself — no store required.</p>
+      </div>
+      <div class="feature">
+        <div class="ico">⚡</div>
+        <h3>Fit-to-screen</h3>
+        <p>Scaled to fill the TV with no overflow, tuned for 1280×720 and up.</p>
+      </div>
+    </section>
+
+    <section class="install">
+      <h2>Install on Android TV</h2>
+      <ol>
+        <li><b>Download the APK</b> onto the device (use the button above, or a sideload tool like Downloader with this page's URL).</li>
+        <li><b>Allow installs from unknown sources</b> when prompted.</li>
+        <li><b>Open Movy TV.</b> From then on it updates itself whenever a new version is published here.</li>
+      </ol>
+      <div class="note">
+        Updates only install if the new APK is signed with the same key as the one already on your device. If you previously ran a build signed with a different key, uninstall it once before installing this one.
+      </div>
+    </section>
+
+    <footer>
+      <p>Movy TV is an unofficial client and is not affiliated with movy.sx. It streams no content itself.<br>
+      Source &amp; releases on <a href="https://github.com/kerv/movy">GitHub</a>.</p>
+    </footer>
+  </div>
+
+  <script>
+    // Show the live version straight from the deployed manifest.
+    fetch('version.json?_=' + Date.now())
+      .then(function(r){ return r.json(); })
+      .then(function(m){
+        if (m.versionName) document.getElementById('ver').textContent = m.versionName;
+        if (m.versionCode)  document.getElementById('code').textContent = '(build ' + m.versionCode + ')';
+      })
+      .catch(function(){
+        document.getElementById('ver').textContent = '—';
+      });
+  </script>
+</body>
+</html>
