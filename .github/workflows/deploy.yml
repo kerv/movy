@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -22,6 +22,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.ver.outputs.code }}
+      name: ${{ steps.ver.outputs.name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,6 +56,15 @@ jobs:
           MOVY_KEY_PASSWORD: ${{ secrets.MOVY_KEY_PASSWORD }}
         run: ./gradlew :app:assembleRelease --no-daemon
 
+      - name: Read release version
+        id: ver
+        run: |
+          CODE=$(grep -oE '"versionCode"[^0-9]*[0-9]+' release/version.json | grep -oE '[0-9]+')
+          NAME=$(grep -oE '"versionName"[^"]*"[^"]*"' release/version.json | sed -E 's/.*"versionName"[^"]*"([^"]*)".*/\1/')
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "Release version: v$NAME (build $CODE)"
+
       - name: Assemble Pages site (movy.apk + version.json)
         run: |
           mkdir -p site
@@ -60,6 +72,19 @@ jobs:
           cp release/version.json site/version.json
           # Landing page (lives in web/, shows the live version via version.json).
           cp web/index.html site/index.html
+
+      - name: Stage APK for the GitHub Release
+        run: |
+          mkdir -p artifact
+          cp app/build/outputs/apk/release/app-release.apk \
+             "artifact/movy-v${{ steps.ver.outputs.name }}.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: movy-apk
+          path: artifact/*.apk
+          retention-days: 7
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
@@ -76,3 +101,51 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: movy-apk
+          path: artifact
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ needs.build.outputs.name }}
+          NAME: ${{ needs.build.outputs.name }}
+          CODE: ${{ needs.build.outputs.code }}
+        run: |
+          set -euo pipefail
+          # Skip cleanly if this version was already released.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; nothing to do."
+            exit 0
+          fi
+
+          NOTES=$(jq -r '.notes // ""' release/version.json)
+          APK=$(ls artifact/*.apk | head -1)
+
+          {
+            echo "Movy TV **v${NAME}** (build ${CODE})."
+            echo ""
+            if [ -n "$NOTES" ]; then echo "$NOTES"; echo ""; fi
+            echo "### Download"
+            echo "- APK (this release): the \`.apk\` asset attached below."
+            echo "- Always-latest APK: https://kerv.github.io/movy/movy.apk"
+            echo "- Update manifest: https://kerv.github.io/movy/version.json"
+            echo ""
+            echo "Installed apps self-update from GitHub Pages automatically."
+          } > notes.md
+
+          gh release create "$TAG" "$APK" \
+            --title "Movy TV v${NAME}" \
+            --notes-file notes.md
+          echo "Created release $TAG with asset $APK"
+
