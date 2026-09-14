@@ -1,0 +1,37 @@
+# === Android / Gradle ===
+.gradle/
+build/
+app/build/
+*/build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Local SDK path (absolute, machine-specific)
+local.properties
+
+# Keystores / signing material — NEVER commit these
+*.jks
+*.keystore
+keystore.properties
+release.keystore
+*.p12
+*.pepk
+
+# === IDE ===
+.idea/
+*.iml
+.vscode/
+*.hprof
+
+# === Node (test harness) ===
+node_modules/
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === Release artifacts / large binaries ===
+# The published APK is built by CI and deployed to GitHub Pages; don't track binaries.
+*.apk
+release/rollback-*/

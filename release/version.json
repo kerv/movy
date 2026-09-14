@@ -1,0 +1,6 @@
+{
+  "versionCode": 10,
+  "versionName": "1.9",
+  "apkUrl": "https://kerv.github.io/movy/movy.apk",
+  "notes": "One remote press now pauses, even when the player drops it. Phones browse in portrait or landscape and rotate to landscape for playback. Updates hand off to the installer reliably."
+}

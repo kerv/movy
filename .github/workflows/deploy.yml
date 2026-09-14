@@ -1,0 +1,84 @@
+name: Build and Deploy to GitHub Pages
+
+# Builds a signed release APK on every push to main and publishes the APK
+# together with release/version.json to GitHub Pages, so the in-app updater
+# can fetch them from https://kerv.github.io/movy/ .
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deployment at a time; let a running one finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Decode release keystore
+        env:
+          MOVY_KEYSTORE_BASE64: ${{ secrets.MOVY_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$MOVY_KEYSTORE_BASE64" ]; then
+            echo "::error::MOVY_KEYSTORE_BASE64 secret is not set. Add a stable release keystore (see README) or the published APK will not self-update."
+            exit 1
+          fi
+          echo "$MOVY_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/movy-release.jks"
+          echo "MOVY_KEYSTORE_PATH=$RUNNER_TEMP/movy-release.jks" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK
+        env:
+          MOVY_KEYSTORE_PASSWORD: ${{ secrets.MOVY_KEYSTORE_PASSWORD }}
+          MOVY_KEY_ALIAS: ${{ secrets.MOVY_KEY_ALIAS }}
+          MOVY_KEY_PASSWORD: ${{ secrets.MOVY_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease --no-daemon
+
+      - name: Assemble Pages site (movy.apk + version.json)
+        run: |
+          mkdir -p site
+          cp app/build/outputs/apk/release/app-release.apk site/movy.apk
+          cp release/version.json site/version.json
+          # A tiny landing page is handy for humans hitting the URL directly.
+          cat > site/index.html <<'HTML'
+          <!doctype html>
+          <meta charset="utf-8">
+          <title>Movy TV</title>
+          <h1>Movy TV</h1>
+          <p><a href="movy.apk">Download APK</a> &middot; <a href="version.json">version.json</a></p>
+          HTML
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

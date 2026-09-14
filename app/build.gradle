@@ -1,0 +1,76 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Release signing is configured from a keystore.properties file (local) or
+// environment variables (CI). If neither is present, the release build falls
+// back to the debug signing config so local `assembleRelease` still works.
+// NOTE: self-update only installs if the new APK is signed with the SAME key
+// as the one already on the device. Keep the release keystore stable forever.
+def keystorePropsFile = rootProject.file("keystore.properties")
+def keystoreProps = new Properties()
+def hasKeystoreFile = keystorePropsFile.exists()
+if (hasKeystoreFile) {
+    keystoreProps.load(new FileInputStream(keystorePropsFile))
+}
+
+def envStorePath = System.getenv("MOVY_KEYSTORE_PATH")
+def hasReleaseSigning = hasKeystoreFile || (envStorePath != null && !envStorePath.isEmpty())
+
+android {
+    namespace 'sx.movy.tv'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "sx.movy.tv"
+        minSdk 21
+        targetSdk 34
+        versionCode 10
+        versionName "1.9"
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(hasKeystoreFile
+                        ? keystoreProps.getProperty("storeFile")
+                        : envStorePath)
+                storePassword hasKeystoreFile
+                        ? keystoreProps.getProperty("storePassword")
+                        : System.getenv("MOVY_KEYSTORE_PASSWORD")
+                keyAlias hasKeystoreFile
+                        ? keystoreProps.getProperty("keyAlias")
+                        : System.getenv("MOVY_KEY_ALIAS")
+                keyPassword hasKeystoreFile
+                        ? keystoreProps.getProperty("keyPassword")
+                        : System.getenv("MOVY_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // Use the release keystore when available, otherwise fall back to
+            // the debug key so local release builds still succeed.
+            signingConfig hasReleaseSigning
+                    ? signingConfigs.release
+                    : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.webkit:webkit:1.10.0'
+    implementation 'androidx.leanback:leanback:1.0.0'
+}
