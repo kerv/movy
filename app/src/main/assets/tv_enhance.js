@@ -61,7 +61,17 @@
       focusFrame.style.display = 'none';
       return;
     }
-    var card = active.closest('.media-card');
+    // The overlay sits on top of the focused element. Let text fields use
+    // their lighter native outline so their first typed character is never
+    // covered by the frame's left edge.
+    if (active.matches('input,textarea,select')) {
+      focusFrame.style.display = 'none';
+      return;
+    }
+    // A poster link represents the whole card. Once a card action (Play,
+    // More, etc.) has focus, frame that action itself so it is clear which
+    // button will run.
+    var card = active.matches('a[href]') && active.closest('.media-card');
     var target = card || active;
     var r = target.getBoundingClientRect();
     // Keep the frame inside the viewport, including the first/last rail card.
@@ -220,6 +230,18 @@
     var r = active.getBoundingClientRect();
     var x = (r.left + r.right) / 2, y = (r.top + r.bottom) / 2;
     var horizontal = dir === 'left' || dir === 'right';
+    // Search result cards contain a poster link followed by actions. Give
+    // those actions priority when leaving the poster with Down. Geometric
+    // selection alone can otherwise choose a card in the next result row.
+    var card = active.matches('a[href]') && active.closest('.media-card');
+    if (card && dir === 'down') {
+      var cardAction = candidates(card).filter(function (el) {
+        if (el === active || el.contains(active) || active.contains(el)) return false;
+        var b = el.getBoundingClientRect();
+        return b.top >= r.bottom - 4;
+      })[0];
+      if (cardAction) return focus(cardAction);
+    }
     var best, score = Infinity;
     list.forEach(function (el) {
       if (el === active || el.contains(active) || active.contains(el)) return;
@@ -559,16 +581,17 @@
     var style = document.createElement('style');
     style.id = '__movy_tv_style';
     style.textContent = [
-      ':focus{outline:3px solid #E50914!important;outline-offset:3px!important;}',
-      '#__movy_focus_frame{position:fixed!important;z-index:2147483000!important;pointer-events:none!important;box-sizing:border-box!important;border:5px solid #fff!important;border-radius:10px!important;box-shadow:0 0 0 3px #080b10,inset 0 0 0 3px #080b10!important;}',
-      '#__movy_focus_frame span{position:absolute;left:3px;right:3px;bottom:3px;padding:8px 10px;border-radius:5px;background:#fff;color:#080b10;font:700 16px/1.3 sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+      ':focus{outline:2px solid rgba(229,9,20,.8)!important;outline-offset:2px!important;}',
+      'input:focus,textarea:focus,select:focus{outline-color:rgba(255,255,255,.85)!important;box-shadow:0 0 0 1px rgba(229,9,20,.7)!important;}',
+      '#__movy_focus_frame{position:fixed!important;z-index:2147483000!important;pointer-events:none!important;box-sizing:border-box!important;border:2px solid rgba(255,255,255,.82)!important;border-radius:8px!important;box-shadow:0 0 0 2px rgba(229,9,20,.7)!important;}',
+      '#__movy_focus_frame span{position:absolute;left:4px;right:4px;bottom:4px;padding:5px 8px;border-radius:4px;background:rgba(8,11,16,.88);color:#fff;font:700 14px/1.3 sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
       '.media-card:focus-within h3{color:#fff!important;font-weight:800!important;}',
       '.media-card a{scroll-margin-top:96px;scroll-margin-bottom:24px;scroll-margin-left:12px;scroll-margin-right:12px;}',
       'html,body{max-width:100%!important;overflow-x:hidden!important;}',
       '#vp-shell[data-movy-controls] .header-top,#vp-shell[data-movy-controls] .bottom-0 > [aria-hidden],#vp-shell[data-movy-controls] [data-movy-transport]{opacity:1!important;transform:none!important;pointer-events:auto!important;}',
       '#vp-shell[data-movy-controls] .header-top{background:linear-gradient(#000b,transparent);}',
       '#vp-shell button:focus{background-color:#ffffff30!important;}',
-      'a:focus button{outline:3px solid #E50914!important;}'
+      'a:focus button{outline:2px solid rgba(229,9,20,.8)!important;}'
     ].join('');
     (document.head || document.documentElement).appendChild(style);
     var observer = new MutationObserver(schedule);

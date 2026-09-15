@@ -47,6 +47,7 @@ const path = require('node:path');
     assert.equal(await active(), 'search', 'hidden/disabled controls are excluded');
     await page.keyboard.type('some title');
     assert.equal(await page.locator('#search').inputValue(), 'some title');
+    assert.equal(await page.locator('#__movy_focus_frame').evaluate(el => getComputedStyle(el).display), 'none', 'search text is not covered by the focus frame');
     await page.keyboard.press('ArrowLeft');
     assert.equal(await active(), 'search', 'text cursor keeps left/right');
     await page.locator('#card0').focus();
@@ -61,6 +62,26 @@ const path = require('node:path');
     assert.ok(await page.evaluate(() => scrollY) > 0, 'remote reaches below-fold content');
     assert.equal(await page.evaluate(() => shortcutCount), 0, 'navigation does not also seek on keyup');
     console.log('PASS catalogue focus, nested OK, editing, carousel, virtualization, vertical scrolling');
+
+    await page.evaluate(() => {
+      document.body.innerHTML = `<style>
+        .search-results{display:flex;gap:24px}.media-card{position:relative;width:200px;height:240px}
+        .media-card>a{display:block;height:130px;background:#444}.card-actions{display:flex;gap:12px;margin-top:14px}
+      </style><input id="result-search" placeholder="Search shows"><section class="search-results">
+        <article class="media-card"><a id="result-one" href="#one">First show</a><div class="card-actions"><button id="play-one">Play</button><button id="more-one">More</button></div></article>
+        <article class="media-card"><a id="result-two" href="#two">Second show</a><div class="card-actions"><button id="play-two">Play</button><button id="more-two">More</button></div></article>
+      </section>`;
+    });
+    await page.locator('#result-search').focus();
+    await page.keyboard.type('a');
+    assert.equal(await page.locator('#result-search').inputValue(), 'a');
+    assert.equal(await page.locator('#__movy_focus_frame').evaluate(el => getComputedStyle(el).display), 'none', 'result search text is not covered');
+    await page.locator('#result-one').focus();
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await active(), 'play-one', 'Down from a result poster reaches Play before another result');
+    await page.keyboard.press('ArrowRight');
+    assert.equal(await active(), 'more-one', 'Right from Play reaches More');
+    console.log('PASS search input visibility and result-card Play/More navigation');
 
     await page.evaluate(() => {
       scrollTo(0,0);
