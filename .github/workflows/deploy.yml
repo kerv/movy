@@ -36,7 +36,11 @@ jobs:
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          # The action's legacy default includes the retired `tools` package.
+          # Install only the SDK pieces this compileSdk 34 app needs.
+          packages: platform-tools platforms;android-34 build-tools;34.0.0
 
       - name: Decode release keystore
         env:
