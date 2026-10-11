@@ -1,6 +1,6 @@
 {
-  "versionCode": 12,
-  "versionName": "1.11",
+  "versionCode": 13,
+  "versionName": "1.12",
   "apkUrl": "https://kerv.github.io/movy/movy.apk",
-  "notes": "Improved search on TV: typed text is fully visible, result-card Play and More controls are easier to reach with the remote, and focus styling is less intrusive."
+  "notes": "Native TV catalogue, search, detail screens, and Media3 playback. Provider rails and signed-in Continue Watching now refresh from Movy; the original WebView remains available for account and recovery flows."
 }

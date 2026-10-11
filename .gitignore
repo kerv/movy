@@ -27,6 +27,9 @@ release.keystore
 # === Node (test harness) ===
 node_modules/
 
+# Abandoned local Plex experiment; it is intentionally not part of the APK.
+plex/
+
 # === OS ===
 .DS_Store
 Thumbs.db

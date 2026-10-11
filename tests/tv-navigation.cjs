@@ -68,17 +68,20 @@ const path = require('node:path');
         .search-results{display:flex;gap:24px}.media-card{position:relative;width:200px;height:240px}
         .media-card>a{display:block;height:130px;background:#444}.card-actions{display:flex;gap:12px;margin-top:14px}
       </style><input id="result-search" placeholder="Search shows"><section class="search-results">
-        <article class="media-card"><a id="result-one" href="#one">First show</a><div class="card-actions"><button id="play-one">Play</button><button id="more-one">More</button></div></article>
-        <article class="media-card"><a id="result-two" href="#two">Second show</a><div class="card-actions"><button id="play-two">Play</button><button id="more-two">More</button></div></article>
+        <article class="media-card"><a id="poster-one" href="#one"><h3>First show</h3></a></article>
+        <div class="search-result"><button id="result-one" aria-expanded="true">First show</button><div class="expanded-result"><p>Show summary</p><div class="card-actions"><a id="play-one" href="#play">Play</a><a id="more-one" href="#more">More info</a></div></div></div>
+        <div class="search-result"><button id="result-two" aria-expanded="false">Second show</button></div>
       </section>`;
     });
     await page.locator('#result-search').focus();
     await page.keyboard.type('a');
     assert.equal(await page.locator('#result-search').inputValue(), 'a');
     assert.equal(await page.locator('#__movy_focus_frame').evaluate(el => getComputedStyle(el).display), 'none', 'result search text is not covered');
+    await page.locator('#poster-one').focus();
+    assert.equal(await page.locator('#__movy_focus_frame').locator(':scope > *').count(), 0, 'card focus does not cover its title with a label');
     await page.locator('#result-one').focus();
     await page.keyboard.press('ArrowDown');
-    assert.equal(await active(), 'play-one', 'Down from a result poster reaches Play before another result');
+    assert.equal(await active(), 'play-one', 'Down from an expanded result reaches Play before the next result');
     await page.keyboard.press('ArrowRight');
     assert.equal(await active(), 'more-one', 'Right from Play reaches More');
     console.log('PASS search input visibility and result-card Play/More navigation');

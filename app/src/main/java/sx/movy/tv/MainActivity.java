@@ -219,7 +219,8 @@ public class MainActivity extends AppCompatActivity {
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState);
         } else {
-            webView.loadUrl(START_URL);
+            String requestedUrl = getIntent().getStringExtra("url");
+            webView.loadUrl(isSiteUrl(requestedUrl) ? requestedUrl : START_URL);
         }
 
         // Check for an app update in the background (silent on failure).
@@ -509,6 +510,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private boolean isSiteUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return false;
+        }
         android.net.Uri uri = android.net.Uri.parse(url);
         String host = uri.getHost();
         return "https".equals(uri.getScheme()) && host != null

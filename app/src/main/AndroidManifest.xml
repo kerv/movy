@@ -36,7 +36,17 @@
         android:usesCleartextTraffic="true">
 
         <activity
-            android:name=".MainActivity"
+            android:name=".PlayerActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:screenOrientation="landscape"
+            android:theme="@style/AppTheme" />
+
+        <!-- The original WebView remains available as a recovery path while the
+             native catalogue/player are validated on devices. -->
+        <activity android:name=".MainActivity" />
+
+        <activity
+            android:name=".NativeActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden|navigation|keyboard|screenLayout|uiMode"
             android:resizeableActivity="true"

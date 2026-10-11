@@ -17,7 +17,7 @@
   var lastPlayer = null, lastFocus = null, menuTrigger = null, focusRect = null;
   var handledKeys = new Set();
   var focusHistory = new Map();
-  var focusFrame, focusLabel;
+  var focusFrame;
   var playbackFocusPending = false;
   var pauseRequested = false;
   var pendingPlaybackState = null;
@@ -51,8 +51,6 @@
       focusFrame = document.createElement('div');
       focusFrame.id = '__movy_focus_frame';
       focusFrame.setAttribute('aria-hidden', 'true');
-      focusLabel = document.createElement('span');
-      focusFrame.appendChild(focusLabel);
       document.body.appendChild(focusFrame);
     }
     var active = document.activeElement, modal = popup();
@@ -75,15 +73,10 @@
     var target = card || active;
     var r = target.getBoundingClientRect();
     // Keep the frame inside the viewport, including the first/last rail card.
-    var left = Math.max(5, r.left), top = Math.max(5, r.top);
-    var right = Math.min(innerWidth - 5, r.right), bottom = Math.min(innerHeight - 5, r.bottom);
+    var left = Math.max(4, r.left - 2), top = Math.max(4, r.top - 2);
+    var right = Math.min(innerWidth - 4, r.right + 2), bottom = Math.min(innerHeight - 4, r.bottom + 2);
     focusFrame.style.cssText = 'display:block;left:' + left + 'px;top:' + top +
       'px;width:' + Math.max(0, right - left) + 'px;height:' + Math.max(0, bottom - top) + 'px;';
-    var heading = card && card.querySelector('h3,h2');
-    var title = heading && heading.textContent.trim();
-    var label = title ? '✓ ' + title : '';
-    if (focusLabel.textContent !== label) focusLabel.textContent = label;
-    focusLabel.style.display = label ? 'block' : 'none';
   }
 
   function attr(el, name, value) {
@@ -230,6 +223,16 @@
     var r = active.getBoundingClientRect();
     var x = (r.left + r.right) / 2, y = (r.top + r.bottom) / 2;
     var horizontal = dir === 'left' || dir === 'right';
+    // Live search results expand a detail panel immediately after the result
+    // button. Down should enter that panel instead of skipping to the next
+    // result, which is geometrically closer to the button's center.
+    var expandedPanel = active.matches('button[aria-expanded="true"]') && active.nextElementSibling;
+    if (dir === 'down' && expandedPanel) {
+      var expandedAction = candidates(expandedPanel).find(function (el) {
+        return visible(el, true);
+      });
+      if (expandedAction) return focus(expandedAction);
+    }
     // Search result cards contain a poster link followed by actions. Give
     // those actions priority when leaving the poster with Down. Geometric
     // selection alone can otherwise choose a card in the next result row.
@@ -581,17 +584,15 @@
     var style = document.createElement('style');
     style.id = '__movy_tv_style';
     style.textContent = [
-      ':focus{outline:2px solid rgba(229,9,20,.8)!important;outline-offset:2px!important;}',
-      'input:focus,textarea:focus,select:focus{outline-color:rgba(255,255,255,.85)!important;box-shadow:0 0 0 1px rgba(229,9,20,.7)!important;}',
-      '#__movy_focus_frame{position:fixed!important;z-index:2147483000!important;pointer-events:none!important;box-sizing:border-box!important;border:2px solid rgba(255,255,255,.82)!important;border-radius:8px!important;box-shadow:0 0 0 2px rgba(229,9,20,.7)!important;}',
-      '#__movy_focus_frame span{position:absolute;left:4px;right:4px;bottom:4px;padding:5px 8px;border-radius:4px;background:rgba(8,11,16,.88);color:#fff;font:700 14px/1.3 sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+      ':focus{outline:none!important;}',
+      'input:focus,textarea:focus,select:focus{outline:2px solid rgba(255,255,255,.85)!important;outline-offset:2px!important;box-shadow:0 0 0 1px rgba(229,9,20,.7)!important;}',
+      '#__movy_focus_frame{position:fixed!important;z-index:2147483000!important;pointer-events:none!important;box-sizing:border-box!important;border:2px solid rgba(255,255,255,.88)!important;border-radius:8px!important;box-shadow:0 0 10px rgba(229,9,20,.55),0 4px 16px rgba(0,0,0,.3)!important;transition:left .12s ease,top .12s ease,width .12s ease,height .12s ease!important;will-change:left,top,width,height!important;}',
       '.media-card:focus-within h3{color:#fff!important;font-weight:800!important;}',
       '.media-card a{scroll-margin-top:96px;scroll-margin-bottom:24px;scroll-margin-left:12px;scroll-margin-right:12px;}',
       'html,body{max-width:100%!important;overflow-x:hidden!important;}',
       '#vp-shell[data-movy-controls] .header-top,#vp-shell[data-movy-controls] .bottom-0 > [aria-hidden],#vp-shell[data-movy-controls] [data-movy-transport]{opacity:1!important;transform:none!important;pointer-events:auto!important;}',
       '#vp-shell[data-movy-controls] .header-top{background:linear-gradient(#000b,transparent);}',
-      '#vp-shell button:focus{background-color:#ffffff30!important;}',
-      'a:focus button{outline:2px solid rgba(229,9,20,.8)!important;}'
+      '#vp-shell button:focus{background-color:#ffffff30!important;}'
     ].join('');
     (document.head || document.documentElement).appendChild(style);
     var observer = new MutationObserver(schedule);
