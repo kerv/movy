@@ -13,15 +13,30 @@ namespace Movy.Desktop;
 public sealed class BrowserConnections : IDisposable
 {
     private static string AccountUrl => Catalog.Site + "/__movy_desktop_account";
-    private readonly Grid host;
-    private readonly WebView2CompositionControl accountBrowser = new() { Width = 1, Height = 1, Focusable = false, IsHitTestVisible = false };
+    private readonly Grid host=new();
+    private Window? hiddenWindow;
+    private WebView2? accountControl;
+    private WebView2 accountBrowser {
+        get {
+            EnsureHost();if(accountControl!=null)return accountControl;
+            accountControl=new WebView2 {Width=1280,Height=720,Focusable=false,IsHitTestVisible=false};host.Children.Add(accountControl);return accountControl;
+        }
+    }
     private readonly SemaphoreSlim accountGate = new(1);
     private readonly Dictionary<int, TaskCompletionSource<JsonElement>> accountRequests = [];
     private Task? accountInitialization;
     private Task<CoreWebView2Environment>? environment;
     private int requestId;
     private bool disposed;
-    public BrowserConnections(Grid host) { this.host = host; host.Children.Insert(0, new Border { Child=accountBrowser,Opacity=0,Width=1,Height=1,IsHitTestVisible=false }); }
+    public BrowserConnections(Grid visibleHost) { /* Do not load any browser/compositor during native startup. */ }
+    private void EnsureHost()
+    {
+        if(disposed)throw new ObjectDisposedException(nameof(BrowserConnections));if(hiddenWindow!=null)return;
+        // Standard WebView2 needs a real HWND/viewport, not a captured D3D image.
+        // An off-screen, zero-opacity, non-activating owned window keeps ALL web
+        // rendering outside the native UI, without a composition/GPU prerequisite.
+        hiddenWindow=new Window {Width=1280,Height=720,Left=-10000,Top=-10000,Opacity=0,ShowInTaskbar=false,ShowActivated=false,WindowStyle=WindowStyle.None,ResizeMode=ResizeMode.NoResize,WindowStartupLocation=WindowStartupLocation.Manual,Content=host,Owner=Application.Current.MainWindow,Focusable=false,IsHitTestVisible=false};hiddenWindow.Show();
+    }
     private Task<CoreWebView2Environment> EnvironmentTask() => environment ??= CoreWebView2Environment.CreateAsync(null, Path.Combine(App.DataDirectory, "Browser"), new CoreWebView2EnvironmentOptions("--autoplay-policy=no-user-gesture-required"));
     private static void Restrict(CoreWebView2 core)
     {
@@ -71,8 +86,7 @@ public sealed class BrowserConnections : IDisposable
     {
         if (!Security.TitlePath(slug)) throw new ArgumentException("Invalid playback title.");
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct); deadline.CancelAfter(TimeSpan.FromSeconds(45)); var token = deadline.Token;
-        var browser = new WebView2CompositionControl { Width = 1280, Height = 720, IsHitTestVisible = false, Focusable = false };
-        var hidden=new Border { Child=browser,Width=1280,Height=720,Opacity=0,IsHitTestVisible=false };host.Children.Insert(0,hidden);
+        EnsureHost();var browser = new WebView2 { Width = 1280, Height = 720, IsHitTestVisible = false, Focusable = false };host.Children.Add(browser);
         var pending = new Dictionary<string, Dictionary<string, string>>(); DateTime lastCapture = DateTime.UtcNow; string page = Catalog.Site + slug + "?play=true";
         try {
             await browser.EnsureCoreWebView2Async(await EnvironmentTask()); token.ThrowIfCancellationRequested(); var core = browser.CoreWebView2; Restrict(core);
@@ -103,7 +117,7 @@ public sealed class BrowserConnections : IDisposable
                 token.ThrowIfCancellationRequested(); return ResolvedStream.From(selected, headers, merged.RootElement);
             }
         } catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new TimeoutException("Movy did not return a stream within 45 seconds. Please try another source."); }
-        finally { if (browser.CoreWebView2 != null) browser.CoreWebView2.Stop(); host.Children.Remove(hidden); browser.Dispose(); }
+        finally { if (browser.CoreWebView2 != null) browser.CoreWebView2.Stop(); host.Children.Remove(browser); browser.Dispose(); }
     }
-    public void Dispose() { disposed = true; foreach (var pending in accountRequests.Values) pending.TrySetCanceled(); accountRequests.Clear(); accountBrowser.Dispose(); }
+    public void Dispose() { disposed = true; foreach (var pending in accountRequests.Values) pending.TrySetCanceled(); accountRequests.Clear(); accountControl?.Dispose(); hiddenWindow?.Close(); }
 }
