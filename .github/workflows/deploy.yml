@@ -58,7 +58,7 @@ jobs:
           MOVY_KEYSTORE_PASSWORD: ${{ secrets.MOVY_KEYSTORE_PASSWORD }}
           MOVY_KEY_ALIAS: ${{ secrets.MOVY_KEY_ALIAS }}
           MOVY_KEY_PASSWORD: ${{ secrets.MOVY_KEY_PASSWORD }}
-        run: ./gradlew :app:assembleRelease --no-daemon
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleRelease --no-daemon
 
       - name: Read release version
         id: ver

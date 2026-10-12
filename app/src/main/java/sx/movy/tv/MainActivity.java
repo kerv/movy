@@ -409,6 +409,10 @@ public class MainActivity extends AppCompatActivity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 if (isSiteUrl(url)) view.evaluateJavascript(loadEnhanceJs(), null);
+                if (isSiteUrl(url) && getIntent().getBooleanExtra("account", false)) {
+                    getIntent().removeExtra("account");
+                    view.evaluateJavascript("(function(){var tries=0;var t=setInterval(function(){var b=document.querySelector('.profile-trigger button');if(b){b.click();clearInterval(t);}else if(++tries>20)clearInterval(t);},300);})()", null);
+                }
             }
         });
 

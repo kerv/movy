@@ -27,23 +27,29 @@ import java.util.concurrent.Executors;
 final class CatalogClient {
     static final String SITE = "https://www.movy.sx";
     private static final ExecutorService IO = Executors.newFixedThreadPool(3);
+    private static final ExecutorService IMAGE_IO = Executors.newFixedThreadPool(3);
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    private static final android.util.LruCache<String, Bitmap> IMAGES = new android.util.LruCache<String, Bitmap>(24 * 1024 * 1024) {
+        @Override protected int sizeOf(String key, Bitmap value) { return value.getByteCount(); }
+    };
 
     interface Result<T> { void accept(T value, Exception error); }
 
     static final class Title {
         final long id;
-        final String title, slug, poster, backdrop, year, rating;
+        final String title, slug, poster, backdrop, year, rating, description;
         Title(JSONObject item) {
             id = item.optLong("id");
             title = item.optString("title", item.optString("name", "Untitled"));
-            slug = item.optString("slug");
+            slug = item.optString("slug", "/" + item.optString("mediaType", "movie") + "/" + id);
             poster = item.optString("poster", item.optString("image"));
             backdrop = item.optString("image", item.optString("background", poster));
             String date = item.optString("release_date", item.optString("first_air_date", ""));
             year = date.length() >= 4 ? date.substring(0, 4) : "";
             rating = item.has("rating") ? String.valueOf(item.optDouble("rating")) : "";
+            description = item.optString("description", item.optString("overview", ""));
         }
+        boolean isSeries() { return slug.startsWith("/tv/"); }
     }
 
     static final class Row {
@@ -53,6 +59,47 @@ final class CatalogClient {
     }
 
     static void home(Result<List<Row>> callback) { load("/", callback, true); }
+    static void providers(Result<List<Row>> callback) {
+        IO.execute(() -> {
+            String[] names={"primevideo","hbomax","disney","appletv","paramount","hulu"};
+            int[] networks={1024,3186,2739,2552,4330,453};
+            List<Row> rows=new ArrayList<>();
+            // Movy's provider selector loads these rows on demand from this
+            // same metadata endpoint. They are empty in the homepage HTML.
+            for(int i=0;i<names.length;i++)try {
+                JSONArray results=new JSONObject(get("https://db.wecollege.net/3/discover/tv?with_networks="+networks[i]+"&language=en&page=1")).getJSONArray("results");
+                List<Title> titles=new ArrayList<>();for(int n=0;n<results.length();n++){JSONObject j=results.optJSONObject(n);if(j!=null)titles.add(fromMetadata(j,"tv"));}
+                if(!titles.isEmpty())rows.add(new Row(humanize(names[i]),titles));
+            }catch(Exception ignored){}
+            MAIN.post(()->callback.accept(rows,null));
+        });
+    }
+    static void details(Title title, Result<JSONObject> callback) {
+        IO.execute(() -> {
+            try {
+                JSONObject data = nextData(get(SITE + title.slug)).getJSONObject("props").getJSONObject("pageProps").getJSONObject("details");
+                MAIN.post(() -> callback.accept(data, null));
+            } catch (Exception e) { MAIN.post(() -> callback.accept(null, e)); }
+        });
+    }
+    static void episodes(long id, int season, Result<JSONArray> callback) {
+        IO.execute(() -> {
+            try {
+                JSONArray episodes = new JSONObject(get("https://db.wecollege.net/3/tv/" + id + "/season/" + season + "?language=en")).getJSONArray("episodes");
+                MAIN.post(() -> callback.accept(episodes, null));
+            } catch (Exception e) { MAIN.post(() -> callback.accept(null, e)); }
+        });
+    }
+    static Title fromMetadata(JSONObject source, String mediaType) throws Exception {
+        JSONObject item = new JSONObject(source.toString());
+        item.put("title", source.optString("title", source.optString("name", "Untitled")));
+        item.put("slug", "/" + mediaType + "/" + source.optLong("id"));
+        item.put("poster", imageUrl(source.optString("poster_path")));
+        item.put("image", imageUrl(source.optString("backdrop_path")));
+        item.put("rating", source.optDouble("vote_average"));
+        item.put("release_date", source.optString("release_date", source.optString("first_air_date")));
+        return new Title(item);
+    }
     static void search(String query, Result<List<Row>> callback) {
         IO.execute(() -> {
             try {
@@ -98,7 +145,7 @@ final class CatalogClient {
         // The page contains several similarly shaped sections. Keep a useful
         // television-sized set, de-duplicating labels as server data evolves.
         LinkedHashMap<String, Row> unique = new LinkedHashMap<>();
-        for (Row row : rows) if (row.titles.size() >= 4 && !unique.containsKey(row.name)) unique.put(row.name, row);
+        for (Row row : rows) if (!row.titles.isEmpty() && !unique.containsKey(row.name)) unique.put(row.name, row);
         // Do not silently drop provider rails (Netflix, Prime, HBO, etc.) if
         // Movy adds more of them than the usual homepage set.
         return new ArrayList<>(unique.values()).subList(0, Math.min(24, unique.size()));
@@ -152,14 +199,20 @@ final class CatalogClient {
     private static String humanize(String key) {
         String normal = key.replaceAll("([a-z])([A-Z])", "$1 $2").replace('_', ' ').trim();
         if ("netflix".equalsIgnoreCase(key)) return "Top Netflix";
-        if ("amazon".equalsIgnoreCase(key) || "prime".equalsIgnoreCase(key)) return "Top Prime Video";
-        if ("hbo".equalsIgnoreCase(key)) return "Top HBO";
+        if ("amazon".equalsIgnoreCase(key) || "prime".equalsIgnoreCase(key) || "primevideo".equals(key)) return "Top Prime Video";
+        if ("hbo".equalsIgnoreCase(key) || "hbomax".equals(key)) return "Top HBO Max";
         if ("disney".equalsIgnoreCase(key)) return "Top Disney+";
         if ("hulu".equalsIgnoreCase(key)) return "Top Hulu";
-        if ("apple".equalsIgnoreCase(key)) return "Top Apple TV+";
+        if ("apple".equalsIgnoreCase(key) || "appletv".equals(key)) return "Top Apple TV+";
         if ("paramount".equalsIgnoreCase(key)) return "Top Paramount+";
         if ("popularMovies".equals(key)) return "Top Movies on Movy";
         if ("popularShowTV".equals(key)) return "Top Shows on Movy";
+        if ("trending".equals(key)) return "Trending This Week";
+        if ("topratedmovie".equals(key)) return "Top Rated Movies";
+        if ("topratedtv".equals(key)) return "Top Rated Series";
+        if ("recent4k".equals(key)) return "Recently Added in 4K";
+        if ("upcomingTv".equals(key)) return "Current & Upcoming Series";
+        if (normal.isEmpty()) return "Discover";
         return normal.substring(0, 1).toUpperCase() + normal.substring(1);
     }
 
@@ -184,7 +237,16 @@ final class CatalogClient {
     }
     static void image(final String url, final Result<Bitmap> callback) {
         if (url == null || url.isEmpty()) return;
-        IO.execute(() -> { try (InputStream in = new URL(url).openStream()) { Bitmap b = BitmapFactory.decodeStream(in); MAIN.post(() -> callback.accept(b, null)); }
-            catch (Exception e) { MAIN.post(() -> callback.accept(null, e)); } });
+        Bitmap cached=IMAGES.get(url);if(cached!=null){callback.accept(cached,null);return;}
+        IMAGE_IO.execute(() -> {
+            HttpURLConnection connection=null;
+            try {
+                String sized=url.replace("%2Foriginal%2F", "%2Fw1280%2F");
+                connection=(HttpURLConnection)new URL(sized).openConnection();connection.setConnectTimeout(10000);connection.setReadTimeout(15000);
+                Bitmap b;try(InputStream in=connection.getInputStream()){b=BitmapFactory.decodeStream(in);}
+                if(b!=null)IMAGES.put(url,b);MAIN.post(()->callback.accept(b,null));
+            } catch (Exception e) { MAIN.post(() -> callback.accept(null, e)); }
+            finally {if(connection!=null)connection.disconnect();}
+        });
     }
 }

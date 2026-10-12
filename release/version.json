@@ -1,6 +1,6 @@
 {
-  "versionCode": 13,
-  "versionName": "1.12",
+  "versionCode": 14,
+  "versionName": "1.13",
   "apkUrl": "https://kerv.github.io/movy/movy.apk",
-  "notes": "Native TV catalogue, search, detail screens, and Media3 playback. Provider rails and signed-in Continue Watching now refresh from Movy; the original WebView remains available for account and recovery flows."
+  "notes": "Redesigned native home and title pages with backdrop artwork, readable cards, ratings, runtime, age ratings, genres, cast, episodes, and recommendations. Restored Prime/HBO/Disney/Apple/Hulu provider rows. Fixed endless detail loading and playback launch; added cancel/retry, highest available source selection, native track and speed controls, next episode, device-local Continue Watching/My List, and native-launcher update checks."
 }

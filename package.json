@@ -1,6 +1,6 @@
 {
   "name": "movy-tv-browser-checks",
   "private": true,
-  "scripts": { "test": "node tests/tv-navigation.cjs" },
+  "scripts": { "test": "node tests/tv-navigation.cjs && node tests/native-resolver.cjs" },
   "devDependencies": { "playwright": "1.55.1" }
 }

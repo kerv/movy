@@ -16,16 +16,37 @@ resolution on demand; do not build a full local media scraper or downloader.
 
 ## Current application
 
-The existing app (`sx.movy.tv`) is a Java Android app that wraps
-`https://www.movy.sx/` in a full-screen WebView. It has extensive injected
-JavaScript for remote navigation, player control, popup blocking, and a
-self-updater. It works, but remains website-shaped and is clunky on a TV remote.
+The app (`sx.movy.tv`) now launches a native Android interface. Version 1.13 adds
+artwork-backed home/detail pages, movie/series filters, multiline title cards,
+ratings, runtime, age ratings, genres, cast, episode selection, and similar titles.
+Provider rows use the same metadata requests as Movy's provider selector.
+
+Play opens a bounded browser resolver on the title's `?play=true` watch route.
+It selects the highest advertised quality, forwards the actual request headers,
+and hands playback to Media3. Loading can be cancelled and failures show retry
+options. Native playback includes resume, next episode, track selection, speed,
+and one automatic source refresh after applicable playlist/HTTP failures.
+
+Continue Watching and My List currently store activity on this device. Movy
+account login, profiles, and account lists remain in the preserved site interface.
+Forwarding cookies alone does **not** provide account sync: Movy uses a JWT and
+active-profile state in WebView local storage. Do not claim native account sync
+until that adapter and native progress writes have been implemented and verified.
+
+Native UI/loading regressions are checked using Robolectric; the resolver quality
+script has browser regressions. Live Chromium verified a movie's 2160p HLS request
+and the season/episode route. Physical Android TV playback still needs confirmation.
 
 Key files:
 
 | Purpose | Path |
 | --- | --- |
-| Main activity | `app/src/main/java/sx/movy/tv/MainActivity.java` |
+| Native home/details/episodes | `app/src/main/java/sx/movy/tv/NativeActivity.java` |
+| Movy metadata client | `app/src/main/java/sx/movy/tv/CatalogClient.java` |
+| On-demand source resolver | `app/src/main/java/sx/movy/tv/StreamResolver.java` |
+| Native Media3 player | `app/src/main/java/sx/movy/tv/PlayerActivity.java` |
+| Device-local resume/saved titles | `app/src/main/java/sx/movy/tv/PlaybackStore.java` |
+| Account/site fallback | `app/src/main/java/sx/movy/tv/MainActivity.java` |
 | Updater | `app/src/main/java/sx/movy/tv/Updater.java` |
 | Existing WebView remote logic | `app/src/main/assets/tv_enhance.js` |
 | Manifest | `app/src/main/AndroidManifest.xml` |
@@ -56,8 +77,8 @@ signing key so installed devices can update in place.
    still fails.
 
 The source was previously verified to offer valid fMP4 HLS with 4K H.264/AAC
-for supported titles. The failed Plex experiment is documented separately in
-`plex/README.md`; do not revive its rclone/FUSE design.
+for supported titles. The local Plex experiment is ignored by Git; do not revive
+its rclone/FUSE design.
 
 ## First milestone
 
@@ -78,6 +99,7 @@ fallback flag until native playback is proven on-device.
 ```bash
 ./gradlew :app:assembleDebug
 ./gradlew :app:lintDebug
+./gradlew :app:testDebugUnitTest
 node --check app/src/main/assets/tv_enhance.js
 npm test
 ```
