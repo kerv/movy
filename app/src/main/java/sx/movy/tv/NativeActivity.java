@@ -28,12 +28,17 @@ public class NativeActivity extends android.app.Activity {
     private String screen="home", filter="All";
     private int generation, season=1;
     private List<CatalogClient.Row> homeRows;
-    private boolean returnFromSite;
     private boolean providersLoading;
     private boolean providersLoaded;
     private Updater updater;
     private CatalogClient.Title detailTitle;
     private boolean returnFromPlayer;
+    private SearchDebouncer searchDebouncer;
+    private AccountClient accountClient;
+    private AccountClient.Snapshot account;
+    private LinearLayout accountRows;
+    private ImageView loadingArt;
+    private TextView loadingTitle;
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
@@ -49,21 +54,30 @@ public class NativeActivity extends android.app.Activity {
     private GradientDrawable rounded(int color,int stroke){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(10));if(stroke!=0)d.setStroke(dp(2),stroke);return d;}
     private Button button(String title,Runnable click){
         Button b=new Button(this);b.setText(title);b.setAllCaps(false);b.setTextSize(14);b.setTextColor(Color.WHITE);b.setPadding(dp(16),0,dp(16),0);b.setBackground(rounded(PANEL,0));b.setFocusable(true);b.setMinHeight(0);b.setMinimumHeight(0);b.setMinWidth(0);b.setMinimumWidth(0);
-        b.setOnClickListener(v->click.run());b.setOnFocusChangeListener((v,f)->{b.setBackground(rounded(f?Color.WHITE:PANEL,0));b.setTextColor(f?BG:Color.WHITE);});return b;
+        b.setOnClickListener(v->click.run());b.setOnFocusChangeListener((v,f)->{b.setBackground(rounded(f?Color.WHITE:PANEL,0));b.setTextColor(f?BG:Color.WHITE);b.animate().scaleX(f?1.035f:1f).scaleY(f?1.035f:1f).setDuration(160).start();});return b;
     }
     private void addButton(LinearLayout row,String title,Runnable click){Button b=button(title,click);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(44));p.rightMargin=dp(10);row.addView(b,p);}
     private void begin(String name){
-        cancelResolver();screen=name;generation++;root.removeAllViews();ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);
+        cancelResolver();if(searchDebouncer!=null)searchDebouncer.cancel();if(accountClient!=null){accountClient.close();accountClient=null;}accountRows=null;screen=name;generation++;root.removeAllViews();ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setSmoothScrollingEnabled(true);
         content=column();content.setPadding(dp(32),dp(18),dp(32),dp(40));scroll.addView(content);root.addView(scroll);
-        loading=new FrameLayout(this);loading.setBackgroundColor(0xf5090d16);LinearLayout box=column();box.setGravity(Gravity.CENTER);ProgressBar spin=new ProgressBar(this);box.addView(spin,new LinearLayout.LayoutParams(dp(42),dp(42)));loadingText=text("Loading…",16);loadingText.setPadding(0,dp(18),0,0);box.addView(loadingText);
+        content.setAlpha(0);content.animate().alpha(1).setDuration(180).start();
+        loading=new FrameLayout(this);loading.setBackgroundColor(BG);
+        loadingArt=new ImageView(this);loadingArt.setScaleType(ImageView.ScaleType.CENTER_CROP);loading.addView(loadingArt,new FrameLayout.LayoutParams(-1,-1));
+        View shade=new View(this);shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,new int[]{0xd9090d16,0xf0090d16}));loading.addView(shade,new FrameLayout.LayoutParams(-1,-1));
+        LinearLayout box=column();box.setGravity(Gravity.CENTER);box.setPadding(dp(32),dp(24),dp(32),dp(24));
+        TextView brand=label("MOVY",18);brand.setTextColor(ACCENT);brand.setGravity(Gravity.CENTER);box.addView(brand);
+        loadingTitle=label("Getting ready",28);loadingTitle.setGravity(Gravity.CENTER);loadingTitle.setPadding(0,dp(18),0,dp(26));box.addView(loadingTitle,new LinearLayout.LayoutParams(-1,-2));
+        ProgressBar spin=new ProgressBar(this);spin.setIndeterminateTintList(android.content.res.ColorStateList.valueOf(ACCENT));box.addView(spin,new LinearLayout.LayoutParams(dp(40),dp(40)));
+        loadingText=text("Loading…",16);loadingText.setGravity(Gravity.CENTER);loadingText.setTextColor(MUTED);loadingText.setPadding(0,dp(22),0,dp(22));box.addView(loadingText,new LinearLayout.LayoutParams(-1,-2));
+        Button cancel=button("Cancel",this::cancelResolver);box.addView(cancel,new LinearLayout.LayoutParams(dp(140),dp(44)));
         loading.addView(box,new FrameLayout.LayoutParams(-1,-1));loading.setVisibility(View.GONE);root.addView(loading);
     }
-    private void busy(boolean yes,String message){loadingText.setText(message);loading.setVisibility(yes?View.VISIBLE:View.GONE);}
+    private void busy(boolean yes,String message){loadingText.setText(message);loading.setVisibility(yes?View.VISIBLE:View.GONE);if(yes){loading.setAlpha(0);loading.animate().alpha(1).setDuration(180).start();}}
     private void header(){
         LinearLayout bar=new LinearLayout(this);bar.setGravity(Gravity.CENTER_VERTICAL);
         TextView logo=label("MOVY",25);logo.setTextColor(ACCENT);bar.addView(logo,new LinearLayout.LayoutParams(0,dp(48),1));
         addButton(bar,"Home",()->{filter="All";showHome();});addButton(bar,"Search",this::showSearch);addButton(bar,"My List",this::showSaved);
-        addButton(bar,"Account",()->openSite("/",true));content.addView(bar);
+        addButton(bar,"Account",this::showAccount);content.addView(bar);
     }
     private void showHome(){
         begin("home");header();
@@ -74,8 +88,10 @@ public class NativeActivity extends android.app.Activity {
         LinearLayout tabs=new LinearLayout(this);tabs.setPadding(0,dp(12),0,dp(14));
         for(String value:new String[]{"All","Movies","Series"})addButton(tabs,(filter.equals(value)?"● ":"")+value,()->{filter=value;showHome();});
         addButton(tabs,"Refresh",()->{homeRows=null;providersLoaded=false;showHome();});content.addView(tabs);
+        LinearLayout providers=new LinearLayout(this);providers.setPadding(0,dp(4),0,dp(14));for(CatalogClient.Provider p:CatalogClient.PROVIDERS)addButton(providers,p.name,()->showProvider(p));HorizontalScrollView providerStrip=new HorizontalScrollView(this);providerStrip.setHorizontalScrollBarEnabled(false);providerStrip.setSmoothScrollingEnabled(true);providerStrip.addView(providers);content.addView(providerStrip);
         List<CatalogClient.Row> rows=new ArrayList<>();for(CatalogClient.Row row:homeRows){List<CatalogClient.Title> titles=new ArrayList<>();for(CatalogClient.Title title:row.titles)if(filter.equals("All")||(filter.equals("Series")==title.isSeries()))titles.add(title);if(!titles.isEmpty())rows.add(new CatalogClient.Row(row.name,titles));}
         if(!rows.isEmpty())hero(rows.get(0).titles.get(0),null,false);
+        accountRows=column();content.addView(accountRows);renderAccountRows();readAccount(false);
         List<CatalogClient.Title> resume=library.titles("resume:");if(!resume.isEmpty())rail(new CatalogClient.Row("Continue Watching · This TV",resume));
         List<CatalogClient.Title> saved=library.titles("saved:");if(!saved.isEmpty())rail(new CatalogClient.Row("My List · This TV",saved));
         for(CatalogClient.Row row:rows)rail(row);
@@ -90,7 +106,7 @@ public class NativeActivity extends android.app.Activity {
             });
         }
     }
-    private void showSaved(){begin("saved");header();content.addView(label("My List",28));TextView note=text("Saved on this TV. Your Movy account lists are available from Account.",14);note.setTextColor(MUTED);note.setPadding(0,dp(12),0,dp(20));content.addView(note);List<CatalogClient.Title> saved=library.titles("saved:");if(saved.isEmpty())content.addView(text("Choose a title and select + My List to save it here.",17));else rail(new CatalogClient.Row("Saved for later",saved));}
+    private void showSaved(){begin("saved");header();content.addView(label("My List",28));accountRows=column();content.addView(accountRows);renderAccountRows();readAccount(false);TextView note=text("Also saved on this TV",14);note.setTextColor(MUTED);note.setPadding(0,dp(20),0,dp(12));content.addView(note);List<CatalogClient.Title> saved=library.titles("saved:");if(saved.isEmpty())content.addView(text("Choose a title and select + My List to save it here.",17));else rail(new CatalogClient.Row("Saved for later · This TV",saved));}
     private void hero(CatalogClient.Title title,JSONObject detail,boolean full){
         FrameLayout hero=new FrameLayout(this);hero.setBackground(rounded(PANEL,0));hero.setClipToOutline(true);
         ImageView art=new ImageView(this);art.setScaleType(ImageView.ScaleType.CENTER_CROP);hero.addView(art,new FrameLayout.LayoutParams(-1,-1));image(art,detail!=null?detail.optString("background",title.backdrop):title.backdrop);
@@ -103,10 +119,10 @@ public class NativeActivity extends android.app.Activity {
         TextView synopsis=text(description.isEmpty()?"Explore this title, meet the cast, and find your next favorite.":description,15);synopsis.setTextColor(0xffd1d8e2);synopsis.setMaxLines(full?5:3);synopsis.setEllipsize(android.text.TextUtils.TruncateAt.END);synopsis.setLineSpacing(dp(3),1);synopsis.setPadding(0,dp(14),0,dp(18));info.addView(synopsis);
         LinearLayout actions=new LinearLayout(this);
         if(full){
-            String resumeKey=library.resumeKey(title);
+            String resumeKey=resumeKey(title);
             int s=1,e=1;String[] parts=resumeKey.split("/");if(title.isSeries()&&parts.length>=5){try{s=Integer.parseInt(parts[3]);e=Integer.parseInt(parts[4]);}catch(NumberFormatException ignored){}}
             final int playSeason=s,playEpisode=e;
-            long pos=library.position(resumeKey);addButton(actions,pos>0?"▶ Resume":"▶ Play",()->play(title,playSeason,playEpisode,false));
+            long pos=resumePosition(title,resumeKey);addButton(actions,pos>0?"▶ Resume":"▶ Play",()->play(title,playSeason,playEpisode,false));
             if(pos>0)addButton(actions,"Start over",()->play(title,playSeason,playEpisode,true));
             Button save=button(library.saved(title.slug)?"✓ In My List":"+ My List",()->{});save.setOnClickListener(v->{library.toggle(title);save.setText(library.saved(title.slug)?"✓ In My List":"+ My List");});LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-2,dp(44));sp.rightMargin=dp(10);actions.addView(save,sp);
         }else addButton(actions,"Explore title",()->showDetail(title));
@@ -124,11 +140,21 @@ public class NativeActivity extends android.app.Activity {
         if(d!=null){String cert=d.optString("certification");if(!cert.isEmpty())fields.add(cert);int mins=d.optInt("duration");if(mins>0)fields.add((mins/60>0?mins/60+"h ":"")+mins%60+"m");JSONArray seasons=d.optJSONArray("seasons");if(seasons!=null&&seasons.length()>0)fields.add(seasons.length()+" seasons");}
         else fields.add(title.isSeries()?"Series":"Movie");return android.text.TextUtils.join("   •   ",fields);
     }
-    private void rail(CatalogClient.Row row){
+    private LinearLayout rail(CatalogClient.Row row){
         TextView heading=label(row.name,20);heading.setPadding(0,dp(18),0,dp(12));content.addView(heading);
         TextView preview=text("",14);preview.setTextColor(MUTED);preview.setMinHeight(dp(24));content.addView(preview);
-        HorizontalScrollView scroll=new HorizontalScrollView(this);scroll.setHorizontalScrollBarEnabled(false);LinearLayout cards=new LinearLayout(this);cards.setPadding(dp(5),dp(8),dp(5),dp(12));
-        for(CatalogClient.Title item:row.titles)cards.addView(card(item,preview));scroll.addView(cards);content.addView(scroll,new LinearLayout.LayoutParams(-1,-2));
+        HorizontalScrollView scroll=new HorizontalScrollView(this);scroll.setHorizontalScrollBarEnabled(false);scroll.setSmoothScrollingEnabled(true);scroll.setClipChildren(false);LinearLayout cards=new LinearLayout(this);cards.setPadding(dp(8),dp(10),dp(8),dp(14));cards.setClipChildren(false);cards.setTag(preview);
+        for(CatalogClient.Title item:row.titles)cards.addView(card(item,preview));scroll.addView(cards);content.addView(scroll,new LinearLayout.LayoutParams(-1,-2));return cards;
+    }
+    private void showProvider(CatalogClient.Provider provider){
+        begin("provider");header();section("Popular on "+provider.name);TextView note=text("Popular movies and series · United States movie catalog",14);note.setTextColor(MUTED);content.addView(note);
+        Map<String,LinearLayout> rails=new LinkedHashMap<>();int token=generation;int[] page={0};Button more=button("Load more",()->{});more.setEnabled(false);
+        Runnable[] fetch=new Runnable[1];fetch[0]=()->{more.setEnabled(false);more.setText("Loading…");CatalogClient.providerPage(provider,page[0]+1,(rows,error)->{
+            if(token!=generation)return;more.setEnabled(true);more.setText("Load more");if(error!=null){more.setText("Retry loading");return;}page[0]++;boolean any=false;
+            // Keep existing rails and focused cards; append the next page.
+            boolean restoreFocus=more.hasFocus();content.removeView(more);for(CatalogClient.Row row:rows){if(row.titles.isEmpty())continue;any=true;LinearLayout cards=rails.get(row.name);if(cards==null){cards=rail(row);rails.put(row.name,cards);}else{TextView preview=(TextView)cards.getTag();for(CatalogClient.Title title:row.titles)cards.addView(card(title,preview));}}
+            LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(dp(180),dp(46));mp.topMargin=dp(20);content.addView(more,mp);if(!any){more.setText("No more titles");more.setEnabled(false);}else if(restoreFocus)more.requestFocus();
+        });};more.setOnClickListener(v->fetch[0].run());content.addView(more,new LinearLayout.LayoutParams(dp(180),dp(46)));fetch[0].run();
     }
     private View card(CatalogClient.Title title,TextView preview){
         LinearLayout card=column();card.setPadding(dp(8),dp(8),dp(8),dp(10));card.setBackground(rounded(PANEL,0));card.setFocusable(true);card.setClickable(true);
@@ -136,7 +162,7 @@ public class NativeActivity extends android.app.Activity {
         TextView name=label(title.title,15);name.setMinLines(2);name.setPadding(0,dp(9),0,dp(5));card.addView(name,new LinearLayout.LayoutParams(-1,-2));
         TextView meta=text(metadata(title,null),12);meta.setTextColor(0xffdec881);card.addView(meta,new LinearLayout.LayoutParams(-1,-2));
         LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(190),-2);cp.rightMargin=dp(14);card.setLayoutParams(cp);
-        card.setOnFocusChangeListener((v,f)->{card.setBackground(rounded(f?0xff26334b:PANEL,f?Color.WHITE:0));poster.setAlpha(f?1:.88f);if(f)preview.setText(title.title+"    "+metadata(title,null));});
+        card.setOnFocusChangeListener((v,f)->{card.setBackground(rounded(f?0xff26334b:PANEL,f?Color.WHITE:0));poster.animate().alpha(f?1:.88f).setDuration(160).start();card.animate().scaleX(f?1.025f:1f).scaleY(f?1.025f:1f).translationZ(f?dp(4):0).setDuration(160).start();if(f)preview.setText(title.title+"    "+metadata(title,null));});
         card.setOnClickListener(v->showDetail(title));return card;
     }
     private void image(ImageView view,String url){
@@ -167,7 +193,7 @@ public class NativeActivity extends android.app.Activity {
         JSONArray cast=detail.optJSONArray("actors");if(cast!=null&&cast.length()>0){section("Cast & Characters");HorizontalScrollView rail=new HorizontalScrollView(this);LinearLayout people=new LinearLayout(this);for(int i=0;i<Math.min(cast.length(),12);i++){JSONObject actor=cast.optJSONObject(i);if(actor==null)continue;LinearLayout person=column();person.setPadding(0,0,dp(16),0);ImageView avatar=new ImageView(this);avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);person.addView(avatar,new LinearLayout.LayoutParams(dp(105),dp(130)));image(avatar,actor.optString("avatar"));TextView name=label(actor.optString("name"),13);person.addView(name,new LinearLayout.LayoutParams(dp(105),-2));TextView role=text(actor.optString("label"),12);role.setTextColor(MUTED);person.addView(role,new LinearLayout.LayoutParams(dp(105),-2));people.addView(person);}rail.addView(people);content.addView(rail);}
         for(String key:new String[]{"directors","writers","creators"}){JSONArray people=detail.optJSONArray(key);if(people!=null&&people.length()>0){StringBuilder names=new StringBuilder();for(int i=0;i<Math.min(people.length(),6);i++){JSONObject p=people.optJSONObject(i);if(i>0)names.append(", ");names.append(p==null?people.optString(i):p.optString("name"));}TextView credit=text(Character.toUpperCase(key.charAt(0))+key.substring(1)+": "+names,14);credit.setTextColor(MUTED);credit.setPadding(0,dp(14),0,0);content.addView(credit);}}
         recommendations(detail.opt("recommendations"),title.isSeries()?"tv":"movie","You May Also Like");recommendations(detail.opt("similar"),title.isSeries()?"tv":"movie","More Like This");
-        LinearLayout options=new LinearLayout(this);options.setPadding(0,dp(22),0,0);addButton(options,"Watch on Movy",()->openSite(title.slug+"?play=true",false));addButton(options,"Refresh details",()->showDetail(title));content.addView(options);
+        LinearLayout options=new LinearLayout(this);options.setPadding(0,dp(22),0,0);addButton(options,"Refresh details",()->showDetail(title));content.addView(options);
     }
     private void section(String title){TextView h=label(title,21);h.setPadding(0,dp(24),0,dp(14));content.addView(h);}
     private String join(JSONArray a){List<String>s=new ArrayList<>();for(int i=0;i<a.length();i++)s.add(a.optString(i));return android.text.TextUtils.join("   •   ",s);}
@@ -191,21 +217,75 @@ public class NativeActivity extends android.app.Activity {
         });
     }
     private void showSearch(){
-        begin("search");header();section("Find your next favorite");LinearLayout bar=new LinearLayout(this);EditText query=new EditText(this);query.setTextColor(Color.WHITE);query.setHintTextColor(MUTED);query.setHint("Movies, series, anime…");query.setSingleLine(true);query.setPadding(dp(18),0,dp(18),0);query.setBackground(rounded(PANEL,0));query.setImeOptions(EditorInfo.IME_ACTION_SEARCH);bar.addView(query,new LinearLayout.LayoutParams(0,dp(52),1));addButton(bar,"Search",()->search(query.getText().toString()));query.setOnEditorActionListener((v,id,e)->{if(id==EditorInfo.IME_ACTION_SEARCH){search(query.getText().toString());return true;}return false;});content.addView(bar);results=column();content.addView(results);query.requestFocus();
+        begin("search");header();section("Find your next favorite");LinearLayout bar=new LinearLayout(this);EditText query=new EditText(this);query.setTextColor(Color.WHITE);query.setHintTextColor(MUTED);query.setHint("Movies, series, anime…");query.setSingleLine(true);query.setPadding(dp(18),0,dp(18),0);query.setBackground(rounded(PANEL,0));query.setImeOptions(EditorInfo.IME_ACTION_SEARCH);bar.addView(query,new LinearLayout.LayoutParams(0,dp(52),1));addButton(bar,"Search",()->search(query.getText().toString()));query.setOnEditorActionListener((v,id,e)->{if(id==EditorInfo.IME_ACTION_SEARCH){search(query.getText().toString());return true;}return false;});content.addView(bar);results=column();content.addView(results);
+        searchDebouncer=new SearchDebouncer(this::search);
+        query.addTextChangedListener(new android.text.TextWatcher(){@Override public void beforeTextChanged(CharSequence s,int start,int count,int after){}@Override public void onTextChanged(CharSequence s,int start,int before,int count){generation++;searchDebouncer.submit(s.toString());if(s.toString().trim().isEmpty())results.removeAllViews();}@Override public void afterTextChanged(android.text.Editable s){}});
+        query.requestFocus();
     }
     private void search(String value){
-        if(value.trim().isEmpty())return;int token=++generation;busy(true,"Searching Movy…");CatalogClient.search(value.trim(),(rows,error)->{if(token!=generation)return;busy(false,"");results.removeAllViews();if(error!=null){error("Search couldn’t load.",()->search(value));return;}LinearLayout main=content;content=results;for(CatalogClient.Row row:rows)if(row.titles.isEmpty())content.addView(text("No matching titles. Try another name.",18));else rail(row);content=main;});
+        if(searchDebouncer!=null)searchDebouncer.cancel();if(value.trim().isEmpty())return;int token=++generation;results.removeAllViews();TextView status=text("Searching…",15);status.setPadding(0,dp(20),0,0);results.addView(status);CatalogClient.search(value.trim(),(rows,error)->{if(token!=generation)return;results.removeAllViews();if(error!=null){results.addView(button("Try search again",()->search(value)));return;}LinearLayout main=content;content=results;for(CatalogClient.Row row:rows)if(row.titles.isEmpty())content.addView(text("No matching titles. Try another name.",18));else rail(row);content=main;});
     }
     private void play(CatalogClient.Title title,int season,int episode,boolean restart){
         if(resolver!=null)return;final String path=title.isSeries()?"/tv/"+title.id+"/"+season+"/"+episode:title.slug;
-        busy(true,"Preparing "+title.title+"…\nPress Back to cancel");StreamResolver current=new StreamResolver(this,root);resolver=current;int token=generation;
+        loadingTitle.setText(title.title);image(loadingArt,title.backdrop);busy(true,"Finding the best available source…");StreamResolver current=new StreamResolver(this,root);resolver=current;int token=generation;
         current.start(CatalogClient.SITE+path+"?play=true",new StreamResolver.Callback(){
-            @Override public void ready(String url,HashMap<String,String> headers){if(token!=generation)return;resolver=null;busy(false,"");Intent intent=new Intent(NativeActivity.this,PlayerActivity.class);intent.setData(Uri.parse(url));intent.putExtra("headers",headers);intent.putExtra("title",title.title);intent.putExtra("poster",title.poster);intent.putExtra("key",path);intent.putExtra("position",restart?0:library.position(path));returnFromPlayer=true;startActivityForResult(intent,410);}
-            @Override public void failed(String message){if(token!=generation)return;resolver=null;busy(false,"");new AlertDialog.Builder(NativeActivity.this).setTitle("Unable to start playback").setMessage(message).setPositiveButton("Try again",(d,w)->play(title,season,episode,restart)).setNeutralButton("Site player",(d,w)->openSite(path+"?play=true",false)).setNegativeButton("Cancel",null).show();}
+            @Override public void ready(String url,HashMap<String,String> headers,String tracks){if(token!=generation)return;resolver=null;busy(false,"");Intent intent=new Intent(NativeActivity.this,PlayerActivity.class);intent.setData(Uri.parse(url));intent.putExtra("headers",headers);intent.putExtra("tracks",tracks);intent.putExtra("title",title.title);intent.putExtra("poster",title.poster);intent.putExtra("key",path);intent.putExtra("position",restart?0:resumePosition(title,path));returnFromPlayer=true;startActivityForResult(intent,410);}
+            @Override public void progress(String message){if(token==generation)loadingText.setText(message);}
+            @Override public void failed(String message){if(token!=generation)return;resolver=null;busy(false,"");new AlertDialog.Builder(NativeActivity.this).setTitle("Unable to start playback").setMessage("This source is unavailable. Please try again shortly.").setPositiveButton("Try again",(d,w)->play(title,season,episode,restart)).setNegativeButton("Cancel",null).show();}
         });
     }
     private void cancelResolver(){if(resolver!=null){resolver.close();resolver=null;}if(loading!=null)loading.setVisibility(View.GONE);}
-    private void openSite(String path,boolean account){returnFromSite=true;Intent i=new Intent(this,MainActivity.class);i.putExtra("url",CatalogClient.SITE+path);i.putExtra("account",account);startActivity(i);}
+    private String resumeKey(CatalogClient.Title title){String local=library.resumeKey(title);if(library.position(local)>0)return local;return account==null?title.slug:account.resume(title).slug;}
+    private long resumePosition(CatalogClient.Title title,String path){long local=library.position(path);if(local>0)return local;CatalogClient.Title remote=account==null?title:account.resume(title);return remote.slug.equals(path)?remote.resumeMs:0;}
+    private void renderAccountRows(){
+        if(accountRows==null)return;accountRows.removeAllViews();LinearLayout main=content;content=accountRows;
+        if(account!=null&&account.signedIn){
+            if(account.profile==null){content.addView(button("Choose your Movy profile",this::showAccount));}
+            else {for(CatalogClient.Row row:account.rows){if(screen.equals("saved")&&row.name.startsWith("Continue Watching"))continue;rail(row);}if(account.partial){TextView note=text("Some Movy account lists couldn’t refresh.",13);note.setTextColor(MUTED);content.addView(note);}}
+        }else {TextView note=text("Connect your Movy account for your lists and Continue Watching.",14);note.setTextColor(MUTED);note.setPadding(0,dp(16),0,dp(8));content.addView(note);content.addView(button("Sign in to Movy",this::showAccount),new LinearLayout.LayoutParams(dp(180),dp(44)));}
+        content=main;
+    }
+    private void readAccount(boolean accountScreen){
+        int token=generation;if(accountClient==null)accountClient=new AccountClient(this,root);
+        if(accountScreen){loadingTitle.setText("Your Movy account");busy(true,"Connecting securely…");}
+        accountClient.request("read",null,(snapshot,error)->{
+            if(token!=generation)return;
+            if(accountScreen)busy(false,"");
+            if(error==null){account=snapshot;if(accountScreen)renderAccount();else renderAccountRows();}
+            else if(accountScreen){error("Couldn’t connect to Movy. "+error.getMessage(),this::showAccount);content.addView(button("Sign in again",this::loginForm),new LinearLayout.LayoutParams(dp(180),dp(44)));}
+        });
+    }
+    private void showAccount(){begin("account");header();section("Your Movy account");readAccount(true);}
+    private void renderAccount(){
+        if(content.getChildCount()>2)content.removeViews(2,content.getChildCount()-2);
+        if(account==null||!account.signedIn){loginForm();return;}
+        content.addView(label(account.username,26));if(!account.email.isEmpty()){TextView email=text(account.email,15);email.setTextColor(MUTED);content.addView(email);}
+        section("Who’s watching?");
+        if(account.profiles.length()==0)content.addView(text("No profiles were returned for this account.",16));
+        LinearLayout people=new LinearLayout(this);
+        for(int i=0;i<account.profiles.length();i++){JSONObject profile=account.profiles.optJSONObject(i);if(profile==null)continue;String name=profile.optString("name","Profile");boolean active=account.profile!=null&&account.profile.optString("id").equals(profile.optString("id"));addButton(people,(active?"● ":"")+name,()->chooseProfile(profile));}
+        HorizontalScrollView sc=new HorizontalScrollView(this);sc.setSmoothScrollingEnabled(true);sc.addView(people);content.addView(sc);
+        if(account.profile!=null){section("Watching as "+account.profile.optString("name"));for(CatalogClient.Row row:account.rows)rail(row);if(account.rows.isEmpty())content.addView(text("Your lists and watch history are currently empty.",16));}
+        LinearLayout actions=new LinearLayout(this);actions.setPadding(0,dp(24),0,0);addButton(actions,"Refresh account",this::showAccount);addButton(actions,"Sign out",()->new AlertDialog.Builder(this).setTitle("Sign out of Movy?").setPositiveButton("Sign out",(d,w)->accountAction("logout",null)).setNegativeButton("Cancel",null).show());content.addView(actions);
+    }
+    private EditText accountInput(String hint,boolean password){EditText input=new EditText(this);input.setHint(hint);input.setTextColor(Color.WHITE);input.setHintTextColor(MUTED);input.setSingleLine(true);input.setPadding(dp(16),0,dp(16),0);input.setBackground(rounded(PANEL,0));input.setInputType(password?android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD:android.text.InputType.TYPE_CLASS_TEXT);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(dp(380),dp(50));p.topMargin=dp(14);content.addView(input,p);return input;}
+    private void loginForm(){
+        if(content.getChildCount()>2)content.removeViews(2,content.getChildCount()-2);
+        TextView note=text("Sign in to access your Movy profiles, watchlists, and Continue Watching.",16);note.setTextColor(MUTED);content.addView(note);
+        EditText username=accountInput("Email or username",false),password=accountInput("Password",true);
+        Button signIn=button("Sign in",()->{String user=username.getText().toString().trim(),pass=password.getText().toString();if(user.isEmpty()||pass.isEmpty())return;JSONObject args=new JSONObject();try{args.put("username",user);args.put("password",pass);}catch(Exception ignored){}password.setText("");accountAction("login",args);});LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(dp(160),dp(46));p.topMargin=dp(18);content.addView(signIn,p);username.requestFocus();
+    }
+    private void chooseProfile(JSONObject profile){
+        if((!profile.has("hasPin")&&!profile.has("pinEnabled")&&!profile.has("pinRequired"))||profile.optBoolean("hasPin")||profile.optBoolean("pinEnabled")||profile.optBoolean("pinRequired")){
+            EditText pin=new EditText(this);pin.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD);pin.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(4)});
+            new AlertDialog.Builder(this).setTitle("PIN for "+profile.optString("name")).setView(pin).setPositiveButton("Continue",(d,w)->selectProfile(profile,pin.getText().toString())).setNegativeButton("Cancel",null).show();
+        }else selectProfile(profile,"");
+    }
+    private void selectProfile(JSONObject profile,String pin){JSONObject args=new JSONObject();try{args.put("id",profile.optString("id"));args.put("pin",pin);}catch(Exception ignored){}accountAction("profile",args);}
+    private void accountAction(String action,JSONObject args){
+        int token=generation;if(accountClient==null)accountClient=new AccountClient(this,root);loadingTitle.setText("Your Movy account");busy(true,"Updating your account…");
+        accountClient.request(action,args,(snapshot,error)->{if(token!=generation)return;busy(false,"");if(error!=null){new AlertDialog.Builder(this).setTitle("Movy account").setMessage(error.getMessage()).setPositiveButton("OK",null).show();return;}account=snapshot;renderAccount();});
+    }
     private void error(String message,Runnable retry){TextView t=text(message,17);t.setPadding(0,dp(20),0,dp(16));content.addView(t);content.addView(button("Try again",retry),new LinearLayout.LayoutParams(dp(150),dp(46)));}
     @Override public void onBackPressed(){if(resolver!=null){cancelResolver();return;}if(!screen.equals("home"))showHome();else new AlertDialog.Builder(this).setTitle("Exit Movy?").setPositiveButton("Exit",(d,w)->finish()).setNegativeButton("Keep browsing",null).show();}
     private void checkUpdate(){
@@ -217,7 +297,7 @@ public class NativeActivity extends android.app.Activity {
         });
     }
     @Override protected void onPause(){super.onPause();if(updater!=null)updater.onActivityPaused();cancelResolver();}
-    @Override protected void onResume(){super.onResume();if(updater!=null)updater.onActivityResumed(this);if(returnFromSite){returnFromSite=false;homeRows=null;showHome();}else if(returnFromPlayer){returnFromPlayer=false;if(detailTitle!=null)showDetail(detailTitle);}}
+    @Override protected void onResume(){super.onResume();if(updater!=null)updater.onActivityResumed(this);if(returnFromPlayer){returnFromPlayer=false;if(detailTitle!=null)showDetail(detailTitle);}}
     @Override protected void onActivityResult(int request,int result,Intent data){
         super.onActivityResult(request,result,data);
         if(request==410&&result==RESULT_OK&&data!=null&&detailTitle!=null){
@@ -231,5 +311,5 @@ public class NativeActivity extends android.app.Activity {
             });
         }
     }
-    @Override protected void onDestroy(){cancelResolver();super.onDestroy();}
+    @Override protected void onDestroy(){cancelResolver();if(searchDebouncer!=null)searchDebouncer.cancel();if(accountClient!=null)accountClient.close();super.onDestroy();}
 }

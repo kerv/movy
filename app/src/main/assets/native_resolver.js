@@ -2,6 +2,35 @@
   if (window.__movyNativeResolver) return;
   window.__movyNativeResolver = true;
   try { sessionStorage.setItem('ads-enabled-session', 'false'); } catch (_) {}
+  var originalParse = JSON.parse;
+  var lastBundle = '';
+  function reportSources(data) {
+    if (!data || !Array.isArray(data.sources)) return;
+    function safeTracks(list, subtitles) {
+      return (Array.isArray(list) ? list : []).slice(0, 100).filter(function (track) {
+        return track && typeof track.url === 'string' && /^https:\/\//i.test(track.url);
+      }).map(function (track) {
+        return subtitles ? {url: track.url, lang: track.lang || '', label: track.language || track.label || track.lang || ''}
+          : {url: track.url, label: String(track.quality || track.label || '')};
+      });
+    }
+    var bundle = JSON.stringify({type: 'tracks', sources: safeTracks(data.sources, false), subtitles: safeTracks(data.subtitles, true)});
+    if (bundle !== lastBundle && window.movyResolverBridge) {
+      lastBundle = bundle;
+      window.movyResolverBridge.postMessage(bundle);
+    }
+  }
+  // Movy's browser decrypts the source response before parsing it. Preserve
+  // parsing behavior and observe only its advertised media/subtitle URLs.
+  JSON.parse = function () {
+    var data = originalParse.apply(this, arguments);
+    try { reportSources(data); } catch (_) {}
+    return data;
+  };
+  var originalJson = Response.prototype.json;
+  Response.prototype.json = function () {
+    return originalJson.apply(this, arguments).then(function (data) { reportSources(data); return data; });
+  };
   var chosen = 0;
   var timer = setInterval(function () {
     var shell = document.querySelector('#vp-shell');

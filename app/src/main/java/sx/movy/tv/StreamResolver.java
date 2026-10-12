@@ -15,7 +15,11 @@ import java.util.*;
 
 /** A bounded browser session started only by Play. No media URLs are logged or persisted. */
 final class StreamResolver {
-    interface Callback { void ready(String url, HashMap<String,String> headers); void failed(String message); }
+    interface Callback {
+        void ready(String url, HashMap<String,String> headers, String tracks);
+        void failed(String message);
+        default void progress(String message) {}
+    }
     private final Activity activity;
     private final FrameLayout parent;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -25,6 +29,7 @@ final class StreamResolver {
     private HashMap<String,String> candidateHeaders;
     private int bestHeight;
     private boolean closed;
+    private String tracks = "{}";
     private final Runnable finish = this::deliver;
     StreamResolver(Activity activity, FrameLayout parent) { this.activity=activity; this.parent=parent; }
     @SuppressLint("SetJavaScriptEnabled") void start(String pageUrl, Callback callback) {
@@ -35,6 +40,12 @@ final class StreamResolver {
         settings.setSupportMultipleWindows(true); settings.setJavaScriptCanOpenWindowsAutomatically(false);
         CookieManager.getInstance().setAcceptCookie(true); CookieManager.getInstance().setAcceptThirdPartyCookies(browser,false);
         String script=script();
+        if(WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(browser,"movyResolverBridge",new HashSet<>(Arrays.asList("https://movy.sx","https://www.movy.sx")),(view,message,origin,mainFrame,reply)->{
+                if(closed||!mainFrame||!site(origin))return;
+                try {org.json.JSONObject data=new org.json.JSONObject(message.getData());if("tracks".equals(data.optString("type")))tracks=data.toString();}catch(Exception ignored){}
+            });
+        }
         if(WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) WebViewCompat.addDocumentStartJavaScript(browser,script,new HashSet<>(Arrays.asList("https://movy.sx","https://*.movy.sx")));
         browser.setWebChromeClient(new WebChromeClient(){ @Override public boolean onCreateWindow(WebView v,boolean d,boolean g,android.os.Message m){return false;} });
         browser.setWebViewClient(new WebViewClient(){
@@ -62,15 +73,17 @@ final class StreamResolver {
         java.util.regex.Matcher match=java.util.regex.Pattern.compile("(?:s|[-_/])(\\d{3,4})p",java.util.regex.Pattern.CASE_INSENSITIVE).matcher(url);
         int height=match.find()?Integer.parseInt(match.group(1)):0;
         if(candidate==null || height>=bestHeight){candidate=url;candidateHeaders=headers;bestHeight=height;}
+        callback.progress(height>=2160?"Preparing your stream in 4K…":"Preparing your stream…");
         handler.removeCallbacks(finish);handler.postDelayed(finish,2500);
     }
     private void deliver(){
         if(closed||candidate==null)return;
         String url=candidate; HashMap<String,String> headers=candidateHeaders;
         if(!headers.containsKey("Referer"))headers.put("Referer",pageUrl);
+        if(!headers.containsKey("Origin")) {Uri origin=Uri.parse(pageUrl);headers.put("Origin",origin.getScheme()+"://"+origin.getAuthority());}
         headers.put("User-Agent",browser.getSettings().getUserAgentString());
         String cookie=CookieManager.getInstance().getCookie(url);if(cookie!=null)headers.put("Cookie",cookie);
-        Callback done=callback;close();done.ready(url,headers);
+        Callback done=callback;String bundle=tracks;close();done.ready(url,headers,bundle);
     }
     private void fail(String message){if(closed)return;Callback done=callback;close();done.failed(message);}
     void close(){closed=true;handler.removeCallbacksAndMessages(null);if(browser!=null){browser.stopLoading();parent.removeView(browser);browser.destroy();browser=null;}}

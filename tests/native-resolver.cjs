@@ -11,6 +11,19 @@ const { chromium } = require('playwright');
     await page.evaluate(source);
     await page.waitForTimeout(1000);
     assert.deepEqual(await page.evaluate(() => window.clicks), ['uhd']);
+    await page.evaluate(() => {
+      window.bundles = [];
+      window.movyResolverBridge = { postMessage: message => window.bundles.push(message) };
+      JSON.parse(JSON.stringify({ sources: [{ url: 'https://media.example/test.m3u8', quality: '2160p' }],
+        subtitles: [{ url: 'https://media.example/english.vtt', lang: 'eng', language: 'eng' },
+          { url: 'javascript:alert(1)', lang: 'bad' }], token: 'must-not-cross-the-bridge' }));
+    });
+    const bundle = JSON.parse(await page.evaluate(() => window.bundles[0]));
+    assert.equal(bundle.subtitles.length, 1);
+    assert.equal(bundle.subtitles[0].lang, 'eng');
+    assert.equal(bundle.sources[0].label, '2160p');
+    assert.equal(bundle.token, undefined);
+    console.log('PASS resolver forwards advertised HTTPS subtitles and quality sources without unrelated response fields');
     await page.evaluate(source);
     await page.waitForTimeout(600);
     assert.deepEqual(await page.evaluate(() => window.clicks), ['uhd']);

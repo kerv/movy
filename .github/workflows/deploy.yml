@@ -29,6 +29,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node for native adapter checks
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Validate native browser adapters
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm test
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:

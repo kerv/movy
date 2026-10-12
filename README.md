@@ -1,109 +1,109 @@
-# Movy TV — native Android TV rebuild
+# Movy TV — native Android TV
 
-## Goal
+A Java Android app (`sx.movy.tv`) with native home, search, title details,
+episodes, account screens, and Media3 playback. Movy supplies current catalogue
+metadata and resolves a stream only after Play is selected.
 
-Replace the current Movy.sx WebView wrapper with a remote-first, native Android
-TV experience similar to a streaming-service app:
+## Current behavior
 
-- D-pad-friendly home rows, search, details, seasons, episodes, and similar titles
-- Native playback with AndroidX Media3 / ExoPlayer
-- Resolve a short-lived HLS source only when the user selects **Play**
-- Prefer the highest source rendition available, including 4K where supported
-- No Plex, rclone, FUSE mount, local-media library, or pre-download workflow
+- Artwork-backed home and title pages; readable cards, scores, runtime, age
+  ratings, genres, cast, recommendations, and season/episode selection.
+- Search automatically runs after a 650 ms typing pause (two or more characters).
+  Manual search also works. Older requests cannot replace newer search results.
+- Provider shortcuts open native Popular Movies/Popular Series pages, with
+  additional pages appended without replacing existing cards. Movie provider
+  availability uses the US metadata region; series use Movy's network filters.
+- Subtle focus scaling, screen fades, smooth scrolling, and a centered
+  artwork-backed loading screen with source status and Cancel.
+- Native Movy sign-in, sign-out, profile selection/PIN verification, account
+  watchlists, and account Continue Watching. Login uses Movy's existing backend;
+  its JWT stays in browser-origin local storage. Only account metadata reaches
+  the native interface. Existing sessions at `https://www.movy.sx` are reused.
+- Device-local My List and playback progress remain available separately.
+  Native progress is not currently written back to the Movy account.
+- Native video playback, resume, next episode, source quality choices, audio
+  selection, caption selection, speed, and remote media keys.
+- External VTT/SRT subtitle files advertised by Movy are merged with HLS using
+  Media3's `DefaultMediaSourceFactory`; both CC and the toolbar subtitle menu
+  expose the available tracks. Languages get readable labels. Sources with only
+  original audio do not invent extra language choices.
+- Native launcher checks `https://kerv.github.io/movy/version.json` for updates.
 
-The user has authorized access to their Movy source material. Keep source
-resolution on demand; do not build a full local media scraper or downloader.
+## Browser connection boundaries
 
-## Current application
+There is no visible website wrapper or site-player fallback. The old
+`MainActivity`, enhancement script, and wrapper-only navigation tests have been
+removed. Do not reintroduce a web browsing surface as a recovery path.
 
-The app (`sx.movy.tv`) now launches a native Android interface. Version 1.13 adds
-artwork-backed home/detail pages, movie/series filters, multiline title cards,
-ratings, runtime, age ratings, genres, cast, episode selection, and similar titles.
-Provider rows use the same metadata requests as Movy's provider selector.
+Two internal browser connections remain:
 
-Play opens a bounded browser resolver on the title's `?play=true` watch route.
-It selects the highest advertised quality, forwards the actual request headers,
-and hands playback to Media3. Loading can be cancelled and failures show retry
-options. Native playback includes resume, next episode, track selection, speed,
-and one automatic source refresh after applicable playlist/HTTP failures.
+1. **Stream resolution:** a short-lived hidden WebView loads the selected title's
+   normal `?play=true` route. It observes the browser's advertised source and
+   subtitle URLs and playlist requests, chooses the highest advertised source,
+   and forwards the actual User-Agent, Referer, Origin, and required headers to
+   Media3. It has a 45-second deadline and supports cancellation. Browsing does
+   not resolve media. Playlist/HTTP errors can trigger one source refresh.
+2. **Account access:** a blank local document with Movy's base origin reads the
+   existing JWT/profile state and calls the same account backend as the site.
+   It renders no site UI. The native interface sends only fixed account actions;
+   an origin-restricted bridge returns metadata, never the JWT or password.
 
-Continue Watching and My List currently store activity on this device. Movy
-account login, profiles, and account lists remain in the preserved site interface.
-Forwarding cookies alone does **not** provide account sync: Movy uses a JWT and
-active-profile state in WebView local storage. Do not claim native account sync
-until that adapter and native progress writes have been implemented and verified.
+The user has authorized access to their Movy source material. Keep media
+resolution on demand; do not build a local media scraper, downloader, Plex,
+rclone, or FUSE workflow. The `plex/` experiment is ignored by Git.
 
-Native UI/loading regressions are checked using Robolectric; the resolver quality
-script has browser regressions. Live Chromium verified a movie's 2160p HLS request
-and the season/episode route. Physical Android TV playback still needs confirmation.
-
-Key files:
+## Main files
 
 | Purpose | Path |
 | --- | --- |
-| Native home/details/episodes | `app/src/main/java/sx/movy/tv/NativeActivity.java` |
-| Movy metadata client | `app/src/main/java/sx/movy/tv/CatalogClient.java` |
-| On-demand source resolver | `app/src/main/java/sx/movy/tv/StreamResolver.java` |
+| Native browse, account, and loading UI | `app/src/main/java/sx/movy/tv/NativeActivity.java` |
+| Catalogue and provider requests | `app/src/main/java/sx/movy/tv/CatalogClient.java` |
+| Account connection | `app/src/main/java/sx/movy/tv/AccountClient.java` |
+| Account browser adapter | `app/src/main/assets/native_account.js` |
+| Stream resolver | `app/src/main/java/sx/movy/tv/StreamResolver.java` |
+| Source/subtitle browser observer | `app/src/main/assets/native_resolver.js` |
+| Caption/source metadata | `app/src/main/java/sx/movy/tv/PlaybackTracks.java` |
 | Native Media3 player | `app/src/main/java/sx/movy/tv/PlayerActivity.java` |
-| Device-local resume/saved titles | `app/src/main/java/sx/movy/tv/PlaybackStore.java` |
-| Account/site fallback | `app/src/main/java/sx/movy/tv/MainActivity.java` |
-| Updater | `app/src/main/java/sx/movy/tv/Updater.java` |
-| Existing WebView remote logic | `app/src/main/assets/tv_enhance.js` |
-| Manifest | `app/src/main/AndroidManifest.xml` |
-| Android app build/version | `app/build.gradle` |
-| Release manifest | `release/version.json` |
-| Detailed historical notes | `HANDOFF.md` |
+| Local resume and saved titles | `app/src/main/java/sx/movy/tv/PlaybackStore.java` |
+| Self-updater | `app/src/main/java/sx/movy/tv/Updater.java` |
+| Release/update manifest | `release/version.json` |
 
-The current project uses Java 17, Android SDK 34, minSdk 21, and already has
-Leanback and AndroidX WebKit dependencies. Preserve the package ID and stable
-signing key so installed devices can update in place.
+## Build and validation
 
-## Recommended architecture
-
-1. **Native UI**: use Leanback or Compose for TV (choose one consistently) for
-   browse rows, search, detail pages, and episode selection. Every interactive
-   item needs deterministic D-pad focus and Back behavior.
-2. **Catalog client**: call Movy’s public metadata/catalog APIs for search,
-   trending, title details, and recommendations. Cache metadata only.
-3. **Resolver**: on Play, load the normal Movy title page in a tightly scoped,
-   hidden resolver WebView (or an equivalent browser-compatible resolver),
-   capture the HLS playlist request, then choose the highest advertised rung.
-   Do not resolve or fetch media while browsing.
-4. **Player**: feed the resolved HLS URL and required User-Agent/Referer headers
-   to Media3 ExoPlayer. Preserve audio/subtitle/quality selection using native
-   controls where possible.
-5. **Resilience**: HLS URLs may expire. On a 401/403/playlist failure, resolve
-   again once and retry the current position; surface a useful native error if it
-   still fails.
-
-The source was previously verified to offer valid fMP4 HLS with 4K H.264/AAC
-for supported titles. The local Plex experiment is ignored by Git; do not revive
-its rclone/FUSE design.
-
-## First milestone
-
-Deliver a native vertical slice before replacing the wrapper:
-
-1. Native TV home screen with one metadata row and D-pad focus.
-2. Native search results and a native title detail page.
-3. One native Play button that resolves an explicit test title only when pressed.
-4. ExoPlayer starts the HLS stream, with Back returning to the detail page.
-5. Build, install, and validate with a physical Android TV remote.
-
-Only after that succeeds should the native catalog replace the WebView home
-screen. Keep the old WebView implementation available behind a temporary
-fallback flag until native playback is proven on-device.
-
-## Validation and release
+Java 17, Android compile/target SDK 34, minSdk 21, Gradle 8.7. `local.properties`
+must point to the Android SDK. Preserve the package ID and stable release signing
+key so installed devices can update in place.
 
 ```bash
-./gradlew :app:assembleDebug
-./gradlew :app:lintDebug
-./gradlew :app:testDebugUnitTest
-node --check app/src/main/assets/tv_enhance.js
+./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+node --check app/src/main/assets/native_resolver.js
+node --check app/src/main/assets/native_account.js
 npm test
 ```
 
-For any release, bump both `versionCode`/`versionName` in `app/build.gradle`
-and the matching values in `release/version.json`. See `HANDOFF.md` for the
-existing signing and updater details.
+Debug APK: `app/build/outputs/apk/debug/app-debug.apk`.
+
+Robolectric checks native loading/layout, search delay/cancellation, local resume,
+and actual Media3 subtitle merging. Browser fixtures check the resolver bridge
+and account login, profile scoping/PIN denial, list/resume normalization, logout,
+and credential isolation. Fixtures do not prove a real signed-in account works;
+that and TV caption rendering/remote behavior still require device validation.
+
+Live browser checks have verified movie/episode HLS playlists and caption files
+with the site's headers. Do not equate a valid playlist with proof of hardware
+decoding on every Android TV device.
+
+## Releases
+
+Bump `versionCode`/`versionName` in `app/build.gradle` and matching fields in
+`release/version.json`. A push to `main` runs Android unit tests and lint, builds
+the signed release APK, publishes GitHub Pages, and creates a GitHub Release.
+
+CI uses the existing `MOVY_KEYSTORE_BASE64`, `MOVY_KEYSTORE_PASSWORD`,
+`MOVY_KEY_ALIAS`, and `MOVY_KEY_PASSWORD` secrets. Never replace the signing key.
+Local release builds without a configured keystore fall back to a debug key and
+are not suitable for distribution to release-signed installations.
+
+Version 1.12 missed update checking in its new launcher; devices on that version
+need one manual installation of a newer signed release. Later native versions
+check the manifest again. `HANDOFF.md` retains historical wrapper-era notes.

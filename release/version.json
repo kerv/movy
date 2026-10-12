@@ -1,6 +1,6 @@
 {
-  "versionCode": 14,
-  "versionName": "1.13",
+  "versionCode": 15,
+  "versionName": "1.14",
   "apkUrl": "https://kerv.github.io/movy/movy.apk",
-  "notes": "Redesigned native home and title pages with backdrop artwork, readable cards, ratings, runtime, age ratings, genres, cast, episodes, and recommendations. Restored Prime/HBO/Disney/Apple/Hulu provider rows. Fixed endless detail loading and playback launch; added cancel/retry, highest available source selection, native track and speed controls, next episode, device-local Continue Watching/My List, and native-launcher update checks."
+  "notes": "Fully native screens: removed the visible website wrapper and all site-player fallbacks. Added automatic search after a typing pause, external caption/CC support, readable audio labels, native Movy sign-in/profile/account lists, provider Popular pages with more titles, subtle focus/screen animations, and a centered artwork-backed playback loading screen. Account lists are pulled from Movy; playback progress remains local to this TV."
 }

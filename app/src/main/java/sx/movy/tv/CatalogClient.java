@@ -37,9 +37,11 @@ final class CatalogClient {
 
     static final class Title {
         final long id;
+        final long resumeMs;
         final String title, slug, poster, backdrop, year, rating, description;
         Title(JSONObject item) {
             id = item.optLong("id");
+            resumeMs = item.optLong("resumeMs");
             title = item.optString("title", item.optString("name", "Untitled"));
             slug = item.optString("slug", "/" + item.optString("mediaType", "movie") + "/" + id);
             poster = item.optString("poster", item.optString("image"));
@@ -56,6 +58,23 @@ final class CatalogClient {
         final String name;
         final List<Title> titles;
         Row(String name, List<Title> titles) { this.name = name; this.titles = titles; }
+    }
+    static final class Provider {
+        final String name;final int network,watchId;
+        Provider(String name,int network,int watchId){this.name=name;this.network=network;this.watchId=watchId;}
+    }
+    static final Provider[] PROVIDERS={new Provider("Netflix",213,8),new Provider("Prime Video",1024,9),new Provider("HBO Max",3186,1899),new Provider("Disney+",2739,337),new Provider("Apple TV+",2552,350),new Provider("Paramount+",4330,531),new Provider("Hulu",453,15)};
+    static void providerPage(Provider provider,int page,Result<List<Row>> callback){
+        IO.execute(()->{
+            List<Row> rows=new ArrayList<>();Exception lastError=null;
+            for(String type:new String[]{"movie","tv"})try{
+                String filter=type.equals("movie")?"with_watch_providers="+provider.watchId+"&watch_region=US":"with_networks="+provider.network;
+                JSONArray results=new JSONObject(get("https://db.wecollege.net/3/discover/"+type+"?"+filter+"&sort_by=popularity.desc&language=en&page="+page)).getJSONArray("results");
+                List<Title> titles=new ArrayList<>();for(int i=0;i<results.length();i++){JSONObject item=results.optJSONObject(i);if(item!=null)titles.add(fromMetadata(item,type));}
+                rows.add(new Row(type.equals("movie")?"Popular Movies":"Popular Series",titles));
+            }catch(Exception e){lastError=e;}
+            Exception error=rows.isEmpty()?lastError:null;MAIN.post(()->callback.accept(rows,error));
+        });
     }
 
     static void home(Result<List<Row>> callback) { load("/", callback, true); }
@@ -198,13 +217,13 @@ final class CatalogClient {
     }
     private static String humanize(String key) {
         String normal = key.replaceAll("([a-z])([A-Z])", "$1 $2").replace('_', ' ').trim();
-        if ("netflix".equalsIgnoreCase(key)) return "Top Netflix";
-        if ("amazon".equalsIgnoreCase(key) || "prime".equalsIgnoreCase(key) || "primevideo".equals(key)) return "Top Prime Video";
-        if ("hbo".equalsIgnoreCase(key) || "hbomax".equals(key)) return "Top HBO Max";
-        if ("disney".equalsIgnoreCase(key)) return "Top Disney+";
-        if ("hulu".equalsIgnoreCase(key)) return "Top Hulu";
-        if ("apple".equalsIgnoreCase(key) || "appletv".equals(key)) return "Top Apple TV+";
-        if ("paramount".equalsIgnoreCase(key)) return "Top Paramount+";
+        if ("netflix".equalsIgnoreCase(key)) return "Popular on Netflix";
+        if ("amazon".equalsIgnoreCase(key) || "prime".equalsIgnoreCase(key) || "primevideo".equals(key)) return "Popular on Prime Video";
+        if ("hbo".equalsIgnoreCase(key) || "hbomax".equals(key)) return "Popular on HBO Max";
+        if ("disney".equalsIgnoreCase(key)) return "Popular on Disney+";
+        if ("hulu".equalsIgnoreCase(key)) return "Popular on Hulu";
+        if ("apple".equalsIgnoreCase(key) || "appletv".equals(key)) return "Popular on Apple TV+";
+        if ("paramount".equalsIgnoreCase(key)) return "Popular on Paramount+";
         if ("popularMovies".equals(key)) return "Top Movies on Movy";
         if ("popularShowTV".equals(key)) return "Top Shows on Movy";
         if ("trending".equals(key)) return "Trending This Week";
@@ -225,10 +244,8 @@ final class CatalogClient {
     private static String get(String address) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(address).openConnection();
         c.setConnectTimeout(15000); c.setReadTimeout(20000); c.setRequestProperty("User-Agent", "Mozilla/5.0 (Android TV) MovyTV/2.0");
-        // Login occurs in the scoped account WebView. Android's CookieManager
-        // is process-wide, so forwarding its site cookie makes personalized
-        // metadata (Continue Watching/watchlist) available to this read-only
-        // native client without storing credentials ourselves.
+        // Site cookies may be needed for catalogue access. Personalized data
+        // uses AccountClient's JWT/profile adapter, not catalogue cookies.
         String cookie = CookieManager.getInstance().getCookie(address);
         if (cookie != null && !cookie.isEmpty()) c.setRequestProperty("Cookie", cookie);
         try (BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream()))) {

@@ -14,6 +14,11 @@ import org.robolectric.annotation.LooperMode;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import static org.junit.Assert.*;
+import org.robolectric.Shadows;
+import android.os.Looper;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk=28)
@@ -53,5 +58,18 @@ public class NativeUiTest {
         LinearLayout content=(LinearLayout)get(a,"content");FrameLayout hero=(FrameLayout)content.getChildAt(0);LinearLayout info=(LinearLayout)hero.getChildAt(2);
         String metadata=((TextView)info.getChildAt(2)).getText().toString();assertTrue(metadata.contains("8.3"));assertTrue(metadata.contains("2h 16m"));assertTrue(metadata.contains("R"));
         View actions=info.getChildAt(4);assertTrue("Hero must not clip its Play row",info.getTop()+actions.getBottom()<=hero.getHeight());
+    }
+    @Test public void automaticSearchWaitsForPauseAndCancelsOldText() {
+        List<String> queries=new ArrayList<>();SearchDebouncer debounce=new SearchDebouncer(queries::add);
+        debounce.submit("mat");Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400));debounce.submit("matrix");
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(649));assertTrue(queries.isEmpty());
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1));assertEquals(java.util.Collections.singletonList("matrix"),queries);
+        debounce.submit("another");debounce.submit("");Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1));assertEquals(1,queries.size());
+    }
+    @Test public void loadingStatusIsCenteredAndHasCancel() throws Exception {
+        NativeActivity a=activity();call(a,"begin",new Class[]{String.class},"detail");
+        TextView status=(TextView)get(a,"loadingText");assertEquals(android.view.Gravity.CENTER,status.getGravity());
+        FrameLayout loading=(FrameLayout)get(a,"loading");LinearLayout panel=(LinearLayout)loading.getChildAt(2);
+        assertEquals("Cancel",((TextView)panel.getChildAt(panel.getChildCount()-1)).getText().toString());
     }
 }

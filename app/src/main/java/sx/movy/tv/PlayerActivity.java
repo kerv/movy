@@ -15,6 +15,7 @@ import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.hls.HlsMediaSource;
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.ui.PlayerView;
 import java.util.*;
 
@@ -31,6 +32,9 @@ public class PlayerActivity extends android.app.Activity {
     private boolean refreshedSource;
     private FrameLayout root;
     private StreamResolver resolver;
+    private PlaybackTracks available;
+    private HashMap<String,String> requestHeaders;
+    private String currentUrl;
     @Override public void onCreate(Bundle state){
         super.onCreate(state);store=new PlaybackStore(this);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
@@ -43,7 +47,9 @@ public class PlayerActivity extends android.app.Activity {
         root.addView(toolbar,new FrameLayout.LayoutParams(-1,-2,Gravity.TOP));view.setControllerVisibilityListener((PlayerView.ControllerVisibilityListener)visibility->toolbar.setVisibility(visibility));
         Uri stream=getIntent().getData();if(stream==null){finish();return;}
         HashMap<String,String> headers=new HashMap<>();java.io.Serializable value=getIntent().getSerializableExtra("headers");if(value instanceof Map)for(Object entry:((Map<?,?>)value).entrySet()){Map.Entry<?,?> e=(Map.Entry<?,?>)entry;if(e.getKey() instanceof String&&e.getValue() instanceof String)headers.put((String)e.getKey(),(String)e.getValue());}
+        available=new PlaybackTracks(getIntent().getStringExtra("tracks"));
         player=new ExoPlayer.Builder(this).build();view.setPlayer(player);
+        View cc=view.findViewById(androidx.media3.ui.R.id.exo_subtitle);if(cc!=null)cc.setOnClickListener(v->tracks(C.TRACK_TYPE_TEXT));
         player.addListener(new Player.Listener(){@Override public void onPlayerError(PlaybackException error){
             if(!refreshedSource&&(error.errorCode==PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS||error.errorCode==PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE||error.errorCode==PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED)){refreshedSource=true;refreshSource();return;}
             playbackError();
@@ -55,21 +61,33 @@ public class PlayerActivity extends android.app.Activity {
     private void speed(){String[] labels={"0.75×","Normal","1.25×","1.5×","2×"};float[] rates={.75f,1f,1.25f,1.5f,2f};new AlertDialog.Builder(this).setTitle("Playback speed").setItems(labels,(d,w)->player.setPlaybackSpeed(rates[w])).show();}
     private void nextEpisode(){String[] parts=getIntent().getStringExtra("key").split("/");try{int s=Integer.parseInt(parts[3]),e=Integer.parseInt(parts[4]);setResult(RESULT_OK,new android.content.Intent().putExtra("season",s).putExtra("episode",e+1));finish();}catch(Exception ignored){}}
     private void prepare(Uri stream,HashMap<String,String> headers,long position){
+        requestHeaders=headers;currentUrl=stream.toString();
         DefaultHttpDataSource.Factory http=new DefaultHttpDataSource.Factory().setDefaultRequestProperties(headers).setConnectTimeoutMs(15000).setReadTimeoutMs(20000);
-        player.setMediaSource(new HlsMediaSource.Factory(http).createMediaSource(MediaItem.fromUri(stream)));player.seekTo(position);player.prepare();player.play();
+        MediaItem item=new MediaItem.Builder().setUri(stream).setMimeType(MimeTypes.APPLICATION_M3U8).setSubtitleConfigurations(available.subtitles).build();
+        // DefaultMediaSourceFactory merges sidecar VTT/SRT media with HLS.
+        // HlsMediaSource alone drops these external subtitle configurations.
+        player.setMediaSource(new DefaultMediaSourceFactory(http).createMediaSource(item));player.seekTo(position);player.prepare();player.play();
     }
     private void refreshSource(){
         if(resolver!=null)return;String key=getIntent().getStringExtra("key");if(key==null){playbackError();return;}
         long position=player.getCurrentPosition();Toast.makeText(this,"Refreshing the stream…",Toast.LENGTH_SHORT).show();resolver=new StreamResolver(this,root);
         resolver.start(CatalogClient.SITE+key+"?play=true",new StreamResolver.Callback(){
-            @Override public void ready(String url,HashMap<String,String> headers){resolver=null;prepare(Uri.parse(url),headers,position);}
+            @Override public void ready(String url,HashMap<String,String> headers,String tracks){resolver=null;available=new PlaybackTracks(tracks);prepare(Uri.parse(url),headers,position);}
             @Override public void failed(String message){resolver=null;playbackError();}
         });
     }
     private void playbackError(){new AlertDialog.Builder(this).setTitle("Playback interrupted").setMessage("This source could not play. Request a fresh stream or return to the title.").setPositiveButton("Return to title",(d,w)->finish()).setNegativeButton("Refresh source",(d,w)->refreshSource()).show();}
     private void tracks(int type){
+        if(type==C.TRACK_TYPE_VIDEO&&available.sources.size()>1){List<String> names=new ArrayList<>();for(PlaybackTracks.Source source:available.sources)names.add((source.url.equals(currentUrl)?"✓ ":"")+source.label);new AlertDialog.Builder(this).setTitle("Quality").setItems(names.toArray(new String[0]),(d,w)->{PlaybackTracks.Source source=available.sources.get(w);prepare(Uri.parse(source.url),requestHeaders,player.getCurrentPosition());}).show();return;}
         List<String> labels=new ArrayList<>();List<TrackSelectionOverride> options=new ArrayList<>();labels.add(type==C.TRACK_TYPE_TEXT?"Off":"Auto");options.add(null);
-        for(Tracks.Group group:player.getCurrentTracks().getGroups())if(group.getType()==type)for(int i=0;i<group.length;i++){if(!group.isTrackSupported(i))continue;Format f=group.getTrackFormat(i);String label=type==C.TRACK_TYPE_VIDEO?(f.height>0?f.height+"p":"Video"):(f.label!=null?f.label:f.language!=null?new Locale(f.language).getDisplayLanguage():"Track "+(i+1));labels.add(label);options.add(new TrackSelectionOverride(group.getMediaTrackGroup(),i));}
+        for(Tracks.Group group:player.getCurrentTracks().getGroups())if(group.getType()==type)for(int i=0;i<group.length;i++){if(!group.isTrackSupported(i))continue;Format f=group.getTrackFormat(i);String label=type==C.TRACK_TYPE_VIDEO?(f.height>0?f.height+"p":"Video"):PlaybackTracks.languageLabel(f.label,f.language,type==C.TRACK_TYPE_AUDIO?"Original audio (default)":"Subtitles "+(i+1));labels.add((group.isTrackSelected(i)?"✓ ":"")+label);options.add(new TrackSelectionOverride(group.getMediaTrackGroup(),i));}
+        if(options.size()==1){
+            if(type==C.TRACK_TYPE_TEXT&&!available.subtitles.isEmpty()){
+                for(MediaItem.SubtitleConfiguration config:available.subtitles){labels.add(config.label==null?"Subtitles":config.label);options.add(null);}
+                new AlertDialog.Builder(this).setTitle("Subtitles").setItems(labels.toArray(new String[0]),(d,w)->{TrackSelectionParameters.Builder builder=player.getTrackSelectionParameters().buildUpon().clearOverridesOfType(type).setTrackTypeDisabled(type,w==0);if(w>0)builder.setPreferredTextLanguage(available.subtitles.get(w-1).language).setSelectUndeterminedTextLanguage(true);player.setTrackSelectionParameters(builder.build());}).show();return;
+            }
+            new AlertDialog.Builder(this).setTitle(type==C.TRACK_TYPE_AUDIO?"Audio":"Subtitles").setMessage(type==C.TRACK_TYPE_AUDIO?"This source provides its original audio. No additional audio languages are advertised.":"This source did not advertise any subtitles. Try resolving a fresh source.").setPositiveButton("OK",null).show();return;
+        }
         String title=type==C.TRACK_TYPE_TEXT?"Subtitles":type==C.TRACK_TYPE_AUDIO?"Audio":"Quality (available in this source)";
         new AlertDialog.Builder(this).setTitle(title).setItems(labels.toArray(new String[0]),(d,w)->{TrackSelectionParameters.Builder builder=player.getTrackSelectionParameters().buildUpon().clearOverridesOfType(type).setTrackTypeDisabled(type,w==0&&type==C.TRACK_TYPE_TEXT);if(options.get(w)!=null)builder.setOverrideForType(options.get(w));player.setTrackSelectionParameters(builder.build());}).show();
     }

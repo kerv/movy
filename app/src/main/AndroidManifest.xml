@@ -41,10 +41,6 @@
             android:screenOrientation="landscape"
             android:theme="@style/AppTheme" />
 
-        <!-- The original WebView remains available as a recovery path while the
-             native catalogue/player are validated on devices. -->
-        <activity android:name=".MainActivity" />
-
         <activity
             android:name=".NativeActivity"
             android:exported="true"
