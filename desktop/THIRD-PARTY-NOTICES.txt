@@ -1,6 +1,7 @@
 Movy Desktop uses Microsoft .NET and Windows Presentation Foundation (MIT),
 and Microsoft's WebView2 SDK (Microsoft's WebView2 SDK license). Their runtime
-files and notices are included by the .NET SDK / NuGet publication process.
+files are included by the .NET SDK / NuGet publication process. Applicable
+runtime/SDK license and notice files are copied into the ZIP's ThirdParty folder.
 https://github.com/dotnet/runtime/blob/main/LICENSE.TXT
 https://github.com/dotnet/wpf/blob/main/LICENSE.TXT
 https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.4258.31

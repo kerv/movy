@@ -1,6 +1,6 @@
 {
-  "versionCode": 22,
-  "versionName": "1.21",
+  "versionCode": 23,
+  "versionName": "1.22",
   "apkUrl": "https://kerv.github.io/movy/movy.apk",
   "notes": "Native Windows preview with startup and theme fixes. Hidden account/resolver browsers now use an isolated off-screen, non-activating window and are initialized on demand, removing the eager graphics-composition startup dependency. Windows native layout explicitly applies its charcoal background/white foreground so derived-window styling cannot hide headings. Unexpected desktop errors produce one diagnostic message and a safe report containing exception types, HRESULTs and method names, not credentials, request URLs or browser state. Windows has Movy libraries/account activity and embedded mpv playback with CC, sources and audio/subtitle timing. Extract the full unsigned Windows x64 ZIP and run Movy.exe; WebView2 Runtime is required and first Play offers a checksum-verified official mpv download. Android and Windows share connection scripts, provider/backend configuration and catalog contract fixtures; Android's signed updater remains enabled. Windows startup/guest-account/generated-audio/IPC smoke checks do not replace real account and video testing."
 }
