@@ -14,7 +14,14 @@
           : {url: track.url, label: String(track.quality || track.label || '')};
       });
     }
-    var bundle = JSON.stringify({type: 'tracks', sources: safeTracks(data.sources, false), subtitles: safeTracks(data.subtitles, true)});
+    var metadata = {type: 'tracks', sources: safeTracks(data.sources, false), subtitles: safeTracks(data.subtitles, true)};
+    var bundle = JSON.stringify(metadata);
+    // Keep a pullable copy even if this WebView lacks the message bridge or
+    // the bridge was not ready when the source response was parsed.
+    window.__movyNativeTracks = metadata;
+    var cached = window.__movyNativeBundles || (window.__movyNativeBundles = []);
+    if (!cached.length || JSON.stringify(cached[0]) !== bundle) cached.unshift(metadata);
+    cached.splice(6);
     if (bundle !== lastBundle && window.movyResolverBridge) {
       lastBundle = bundle;
       window.movyResolverBridge.postMessage(bundle);

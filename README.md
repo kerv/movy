@@ -10,9 +10,13 @@ metadata and resolves a stream only after Play is selected.
   ratings, genres, cast, recommendations, and season/episode selection.
 - Search automatically runs after a 650 ms typing pause (two or more characters).
   Manual search also works. Older requests cannot replace newer search results.
-- Provider shortcuts open native Popular Movies/Popular Series pages, with
-  additional pages appended without replacing existing cards. Movie provider
-  availability uses the US metadata region; series use Movy's network filters.
+- Provider shortcuts offer Popular and Recently Released views. Load more
+  appends unique cards, displays counts, and moves focus/scroll to the first new
+  title. Partial request failures are retried without silently skipping a page.
+  Popular is the metadata popularity ranking, not a weekly viewing chart.
+  Recent sorts original movie releases and first series premieres newest first,
+  excluding future/unknown dates; it does not mean newly added or new episodes.
+  Movie availability uses the US region; series use Movy's network filters.
 - Subtle focus scaling, screen fades, smooth scrolling, and a centered
   artwork-backed loading screen with source status and Cancel.
 - Native Movy sign-in, sign-out, profile selection/PIN verification, account
@@ -25,7 +29,13 @@ metadata and resolves a stream only after Play is selected.
   selection, caption selection, speed, and remote media keys.
 - External VTT/SRT subtitle files advertised by Movy are merged with HLS using
   Media3's `DefaultMediaSourceFactory`; both CC and the toolbar subtitle menu
-  expose the available tracks. Languages get readable labels. Sources with only
+  expose the available tracks. If browser metadata is missing, native playback
+  searches Movy's `subtitles.vidy.st` service with the exact title/episode ID.
+  CC stays clickable during lookup, failures can be retried, and `/download`
+  files use their advertised SRT/VTT format. Up to three release alternatives per
+  language are offered; the selected edition is matched by track ID, not just
+  language. Alternate release captions may have different timing.
+  Languages get readable labels. Sources with only
   original audio do not invent extra language choices.
 - Native launcher checks `https://kerv.github.io/movy/version.json` for updates.
 
@@ -63,6 +73,7 @@ rclone, or FUSE workflow. The `plex/` experiment is ignored by Git.
 | Stream resolver | `app/src/main/java/sx/movy/tv/StreamResolver.java` |
 | Source/subtitle browser observer | `app/src/main/assets/native_resolver.js` |
 | Caption/source metadata | `app/src/main/java/sx/movy/tv/PlaybackTracks.java` |
+| Native caption lookup fallback | `app/src/main/java/sx/movy/tv/SubtitleLookup.java` |
 | Native Media3 player | `app/src/main/java/sx/movy/tv/PlayerActivity.java` |
 | Local resume and saved titles | `app/src/main/java/sx/movy/tv/PlaybackStore.java` |
 | Self-updater | `app/src/main/java/sx/movy/tv/Updater.java` |

@@ -1,6 +1,6 @@
 {
-  "versionCode": 15,
-  "versionName": "1.14",
+  "versionCode": 16,
+  "versionName": "1.15",
   "apkUrl": "https://kerv.github.io/movy/movy.apk",
-  "notes": "Fully native screens: removed the visible website wrapper and all site-player fallbacks. Added automatic search after a typing pause, external caption/CC support, readable audio labels, native Movy sign-in/profile/account lists, provider Popular pages with more titles, subtle focus/screen animations, and a centered artwork-backed playback loading screen. Account lists are pulled from Movy; playback progress remains local to this TV."
+  "notes": "Caption recovery: CC stays clickable and searches Movy's subtitle service when browser metadata is missing; SRT download formats and exact release-track selection are handled. Provider Load more now shows loaded counts and focuses newly added cards without duplicates. All providers have additional Recently Released Movies and Recently Premiered Series views, excluding future releases. Popular uses Movy's metadata popularity ranking, not weekly charts; recent series means first premieres, not new episodes. Movie availability uses the US region. Fully native screens and update checking remain enabled."
 }

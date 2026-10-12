@@ -65,15 +65,23 @@ final class CatalogClient {
     }
     static final Provider[] PROVIDERS={new Provider("Netflix",213,8),new Provider("Prime Video",1024,9),new Provider("HBO Max",3186,1899),new Provider("Disney+",2739,337),new Provider("Apple TV+",2552,350),new Provider("Paramount+",4330,531),new Provider("Hulu",453,15)};
     static void providerPage(Provider provider,int page,Result<List<Row>> callback){
+        providerPage(provider,page,false,callback);
+    }
+    static String providerUrl(Provider provider,String type,int page,boolean recent,String today){
+        String filter=type.equals("movie")?"with_watch_providers="+provider.watchId+"&watch_region=US":"with_networks="+provider.network;
+        String date=type.equals("movie")?"primary_release_date":"first_air_date";
+        return "https://db.wecollege.net/3/discover/"+type+"?"+filter+"&sort_by="+(recent?date+".desc":"popularity.desc")+(recent?"&"+date+".lte="+today+"&"+date+".gte=1900-01-01":"")+"&language=en&page="+page;
+    }
+    static void providerPage(Provider provider,int page,boolean recent,Result<List<Row>> callback){
         IO.execute(()->{
             List<Row> rows=new ArrayList<>();Exception lastError=null;
+            String today=new java.text.SimpleDateFormat("yyyy-MM-dd",java.util.Locale.US).format(new java.util.Date());
             for(String type:new String[]{"movie","tv"})try{
-                String filter=type.equals("movie")?"with_watch_providers="+provider.watchId+"&watch_region=US":"with_networks="+provider.network;
-                JSONArray results=new JSONObject(get("https://db.wecollege.net/3/discover/"+type+"?"+filter+"&sort_by=popularity.desc&language=en&page="+page)).getJSONArray("results");
+                JSONArray results=new JSONObject(get(providerUrl(provider,type,page,recent,today))).getJSONArray("results");
                 List<Title> titles=new ArrayList<>();for(int i=0;i<results.length();i++){JSONObject item=results.optJSONObject(i);if(item!=null)titles.add(fromMetadata(item,type));}
-                rows.add(new Row(type.equals("movie")?"Popular Movies":"Popular Series",titles));
+                rows.add(new Row(recent?(type.equals("movie")?"Recently Released Movies":"Recently Premiered Series"):(type.equals("movie")?"Popular Movies":"Popular Series"),titles));
             }catch(Exception e){lastError=e;}
-            Exception error=rows.isEmpty()?lastError:null;MAIN.post(()->callback.accept(rows,error));
+            Exception error=lastError;MAIN.post(()->callback.accept(rows,error));
         });
     }
 

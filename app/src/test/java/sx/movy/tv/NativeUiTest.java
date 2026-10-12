@@ -24,6 +24,24 @@ import java.util.List;
 @Config(sdk=28)
 @LooperMode(LooperMode.Mode.PAUSED)
 public class NativeUiTest {
+    @Test public void providerPagingReturnsFirstNewCardAndDoesNotDuplicateTitles() throws Exception {
+        NativeActivity a=activity();LinearLayout cards=new LinearLayout(a);cards.setTag(new TextView(a));
+        CatalogClient.Title first=new CatalogClient.Title(new JSONObject().put("id",1).put("slug","/tv/1").put("name","First"));
+        CatalogClient.Title second=new CatalogClient.Title(new JSONObject().put("id",2).put("slug","/tv/2").put("name","Second"));
+        a.appendProviderTitles(cards,java.util.Collections.singletonList(first));
+        View next=a.appendProviderTitles(cards,java.util.Arrays.asList(first,second));assertEquals(2,cards.getChildCount());assertSame(cards.getChildAt(1),next);assertEquals("/tv/2",next.getTag());assertTrue(next.isFocusable());
+        assertNull(a.appendProviderTitles(cards,java.util.Collections.singletonList(second)));
+    }
+    @Test public void providerRecentQueriesUseReleaseDatesAndExcludeFutureTitles(){
+        CatalogClient.Provider disney=CatalogClient.PROVIDERS[3];String tv=CatalogClient.providerUrl(disney,"tv",2,true,"2026-10-11");
+        assertTrue(tv.contains("with_networks=2739"));assertTrue(tv.contains("sort_by=first_air_date.desc"));assertTrue(tv.contains("first_air_date.lte=2026-10-11"));assertTrue(tv.contains("page=2"));
+        String movie=CatalogClient.providerUrl(disney,"movie",1,true,"2026-10-11");assertTrue(movie.contains("with_watch_providers=337&watch_region=US"));assertTrue(movie.contains("primary_release_date.lte=2026-10-11"));assertTrue(movie.contains("sort_by=primary_release_date.desc"));
+        assertTrue(CatalogClient.providerUrl(disney,"tv",1,false,"2026-10-11").contains("sort_by=popularity.desc"));
+    }
+    @Test public void captionControlRemainsClickableWithoutAdvertisedTracks() throws Exception {
+        PlayerActivity a=Robolectric.buildActivity(PlayerActivity.class).get();android.widget.Button cc=new android.widget.Button(a);cc.setEnabled(false);cc.setVisibility(View.GONE);set(a,"captionButton",cc);
+        call(a,"enableCaptionButton",new Class[]{});assertTrue(cc.isEnabled());assertEquals(View.VISIBLE,cc.getVisibility());assertEquals("Closed captions",cc.getContentDescription());assertTrue(cc.hasOnClickListeners());
+    }
     private NativeActivity activity() throws Exception {
         NativeActivity a=Robolectric.buildActivity(NativeActivity.class).get();
         set(a,"root",new FrameLayout(a));set(a,"library",new PlaybackStore(a));return a;

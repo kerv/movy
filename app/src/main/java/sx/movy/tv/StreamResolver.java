@@ -30,6 +30,7 @@ final class StreamResolver {
     private int bestHeight;
     private boolean closed;
     private String tracks = "{}";
+    private boolean readingTracks;
     private final Runnable finish = this::deliver;
     StreamResolver(Activity activity, FrameLayout parent) { this.activity=activity; this.parent=parent; }
     @SuppressLint("SetJavaScriptEnabled") void start(String pageUrl, Callback callback) {
@@ -65,7 +66,7 @@ final class StreamResolver {
         // loading overlay covers it and it cannot receive remote focus.
         browser.setFocusable(false); browser.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         parent.addView(browser,0,new FrameLayout.LayoutParams(-1,-1)); browser.setAlpha(0f);
-        handler.postDelayed(()->{if(candidate!=null)deliver();else fail("No playable stream was returned. Try again or use the site player for this title.");},45000);
+        handler.postDelayed(()->{if(candidate!=null)deliver();else fail("No playable stream was returned. Please try again shortly.");},45000);
         browser.loadUrl(pageUrl);
     }
     private void capture(String url,HashMap<String,String> headers){
@@ -77,6 +78,20 @@ final class StreamResolver {
         handler.removeCallbacks(finish);handler.postDelayed(finish,2500);
     }
     private void deliver(){
+        if(closed||candidate==null||readingTracks)return;
+        readingTracks=true;
+        String selected=org.json.JSONObject.quote(candidate);
+        String pull="(function(){var bundles=window.__movyNativeBundles||[];for(var i=0;i<bundles.length;i++){var sources=bundles[i].sources||[];for(var j=0;j<sources.length;j++)if(sources[j].url==="+selected+")return JSON.stringify(bundles[i]);}return JSON.stringify(window.__movyNativeTracks||null);})()";
+        browser.evaluateJavascript(pull,value->{
+            if(closed)return;
+            try{Object raw=new org.json.JSONTokener(value).nextValue();if(raw instanceof String){org.json.JSONObject data=new org.json.JSONObject((String)raw);if(data.optJSONArray("subtitles")!=null)tracks=data.toString();}}catch(Exception ignored){}
+            complete();
+        });
+        // Some older TV WebViews fail to return an evaluation callback. Do
+        // not strand playback; native subtitle lookup remains available.
+        handler.postDelayed(this::complete,1000);
+    }
+    private void complete(){
         if(closed||candidate==null)return;
         String url=candidate; HashMap<String,String> headers=candidateHeaders;
         if(!headers.containsKey("Referer"))headers.put("Referer",pageUrl);

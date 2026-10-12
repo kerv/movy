@@ -18,7 +18,7 @@ final class PlaybackTracks {
         try {JSONObject data=new JSONObject(raw==null?"{}":raw);JSONArray subs=data.optJSONArray("subtitles"),media=data.optJSONArray("sources");Set<String>seen=new HashSet<>();
             if(subs!=null)for(int i=0;i<subs.length();i++){JSONObject s=subs.optJSONObject(i);if(s==null)continue;String url=s.optString("url");if(!https(url)||!seen.add(url))continue;
                 String language=languageCode(s.optString("lang")),label=languageLabel(s.optString("label"),language,"Subtitles "+(i+1));
-                String path=Uri.parse(url).getPath();String mime=path!=null&&path.toLowerCase(Locale.ROOT).endsWith(".srt")?MimeTypes.APPLICATION_SUBRIP:MimeTypes.TEXT_VTT;
+                String path=Uri.parse(url).getPath();String mime="srt".equalsIgnoreCase(s.optString("format"))||(path!=null&&path.toLowerCase(Locale.ROOT).endsWith(".srt"))?MimeTypes.APPLICATION_SUBRIP:MimeTypes.TEXT_VTT;
                 subtitles.add(new MediaItem.SubtitleConfiguration.Builder(Uri.parse(url)).setId("movy-sub-"+i).setLabel(label).setLanguage(language).setMimeType(mime).setRoleFlags(C.ROLE_FLAG_SUBTITLE).build());
             }
             seen.clear();if(media!=null)for(int i=0;i<media.length();i++){JSONObject s=media.optJSONObject(i);if(s==null)continue;String url=s.optString("url");if(https(url)&&seen.add(url))sources.add(new Source(url,languageLabel(s.optString("label"),"","Source "+(i+1))));}

@@ -11,6 +11,11 @@ const { chromium } = require('playwright');
     await page.evaluate(source);
     await page.waitForTimeout(1000);
     assert.deepEqual(await page.evaluate(() => window.clicks), ['uhd']);
+    await page.evaluate(() => JSON.parse(JSON.stringify({sources:[{url:'https://media.example/early.m3u8',quality:'1080p'}],subtitles:[{url:'https://media.example/early.vtt',lang:'eng'}]})));
+    const cached = await page.evaluate(() => window.__movyNativeTracks);
+    assert.equal(cached.subtitles[0].url, 'https://media.example/early.vtt');
+    assert.equal(cached.sources[0].url, 'https://media.example/early.m3u8');
+    console.log('PASS subtitle metadata can be pulled without a browser message bridge');
     await page.evaluate(() => {
       window.bundles = [];
       window.movyResolverBridge = { postMessage: message => window.bundles.push(message) };

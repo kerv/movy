@@ -147,17 +147,28 @@ public class NativeActivity extends android.app.Activity {
         for(CatalogClient.Title item:row.titles)cards.addView(card(item,preview));scroll.addView(cards);content.addView(scroll,new LinearLayout.LayoutParams(-1,-2));return cards;
     }
     private void showProvider(CatalogClient.Provider provider){
-        begin("provider");header();section("Popular on "+provider.name);TextView note=text("Popular movies and series · United States movie catalog",14);note.setTextColor(MUTED);content.addView(note);
+        showProvider(provider,false);
+    }
+    private void showProvider(CatalogClient.Provider provider,boolean recent){
+        begin("provider");header();section((recent?"Recently released on ":"Popular on ")+provider.name);
+        LinearLayout filters=new LinearLayout(this);addButton(filters,recent?"Popular":"✓ Popular",()->showProvider(provider,false));addButton(filters,recent?"✓ Recently released":"Recently released",()->showProvider(provider,true));content.addView(filters);
+        TextView note=text(recent?"Newest original movie releases and series premieres, not new episodes or newly added titles · US movie availability":"Movy metadata popularity ranking, not weekly charts · US movie availability",14);note.setTextColor(MUTED);content.addView(note);
+        TextView status=text("Loading titles…",14);status.setTextColor(MUTED);content.addView(status);
         Map<String,LinearLayout> rails=new LinkedHashMap<>();int token=generation;int[] page={0};Button more=button("Load more",()->{});more.setEnabled(false);
-        Runnable[] fetch=new Runnable[1];fetch[0]=()->{more.setEnabled(false);more.setText("Loading…");CatalogClient.providerPage(provider,page[0]+1,(rows,error)->{
-            if(token!=generation)return;more.setEnabled(true);more.setText("Load more");if(error!=null){more.setText("Retry loading");return;}page[0]++;boolean any=false;
+        Runnable[] fetch=new Runnable[1];fetch[0]=()->{more.setEnabled(false);more.setText("Loading…");status.setText("Loading page "+(page[0]+1)+"…");CatalogClient.providerPage(provider,page[0]+1,recent,(rows,error)->{
+            if(token!=generation)return;more.setEnabled(true);more.setText("Load more");if(error!=null){more.setText("Retry loading");status.setText("Couldn’t load this page. Select Retry loading.");return;}page[0]++;boolean any=false;View firstNew=null;int added=0,total=0;
             // Keep existing rails and focused cards; append the next page.
-            boolean restoreFocus=more.hasFocus();content.removeView(more);for(CatalogClient.Row row:rows){if(row.titles.isEmpty())continue;any=true;LinearLayout cards=rails.get(row.name);if(cards==null){cards=rail(row);rails.put(row.name,cards);}else{TextView preview=(TextView)cards.getTag();for(CatalogClient.Title title:row.titles)cards.addView(card(title,preview));}}
-            LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(dp(180),dp(46));mp.topMargin=dp(20);content.addView(more,mp);if(!any){more.setText("No more titles");more.setEnabled(false);}else if(restoreFocus)more.requestFocus();
+            content.removeView(more);for(CatalogClient.Row row:rows){if(row.titles.isEmpty())continue;any=true;LinearLayout cards=rails.get(row.name);if(cards==null){cards=rail(new CatalogClient.Row(row.name,new ArrayList<>()));rails.put(row.name,cards);}int before=cards.getChildCount();View next=appendProviderTitles(cards,row.titles);added+=cards.getChildCount()-before;if(firstNew==null)firstNew=next;}
+            for(LinearLayout cards:rails.values())total+=cards.getChildCount();status.setText(total+" titles loaded · Page "+page[0]+" · "+added+" new titles");
+            LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(dp(180),dp(46));mp.topMargin=dp(20);content.addView(more,mp);if(!any){more.setText("No more titles");more.setEnabled(false);}else if(page[0]>1&&firstNew!=null){View target=firstNew;target.post(()->{if(token==generation){target.requestFocus();((android.widget.HorizontalScrollView)target.getParent().getParent()).smoothScrollTo(target.getLeft(),0);}});}
         });};more.setOnClickListener(v->fetch[0].run());content.addView(more,new LinearLayout.LayoutParams(dp(180),dp(46)));fetch[0].run();
     }
+    View appendProviderTitles(LinearLayout cards,List<CatalogClient.Title> titles){
+        java.util.Set<String> seen=new java.util.HashSet<>();for(int i=0;i<cards.getChildCount();i++)seen.add((String)cards.getChildAt(i).getTag());View first=null;
+        for(CatalogClient.Title title:titles)if(seen.add(title.slug)){View item=card(title,(TextView)cards.getTag());cards.addView(item);if(first==null)first=item;}return first;
+    }
     private View card(CatalogClient.Title title,TextView preview){
-        LinearLayout card=column();card.setPadding(dp(8),dp(8),dp(8),dp(10));card.setBackground(rounded(PANEL,0));card.setFocusable(true);card.setClickable(true);
+        LinearLayout card=column();card.setTag(title.slug);card.setPadding(dp(8),dp(8),dp(8),dp(10));card.setBackground(rounded(PANEL,0));card.setFocusable(true);card.setClickable(true);
         ImageView poster=new ImageView(this);poster.setScaleType(ImageView.ScaleType.CENTER_CROP);poster.setBackground(rounded(0xff263146,0));card.addView(poster,new LinearLayout.LayoutParams(-1,dp(220)));image(poster,title.poster);
         TextView name=label(title.title,15);name.setMinLines(2);name.setPadding(0,dp(9),0,dp(5));card.addView(name,new LinearLayout.LayoutParams(-1,-2));
         TextView meta=text(metadata(title,null),12);meta.setTextColor(0xffdec881);card.addView(meta,new LinearLayout.LayoutParams(-1,-2));
