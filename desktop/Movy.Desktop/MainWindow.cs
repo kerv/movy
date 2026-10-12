@@ -29,12 +29,14 @@ public sealed class MainWindow : Window
     public MainWindow()
     {
         Title="Movy Desktop";Width=1380;Height=860;MinWidth=900;MinHeight=620;
+        // Implicit Window styles do not automatically theme derived Window types.
+        Background=new SolidColorBrush(Color.FromRgb(17,20,22));Foreground=Brushes.White;root.Background=Background;
         root.ColumnDefinitions.Add(new ColumnDefinition { Width=new GridLength(218) });root.ColumnDefinitions.Add(new ColumnDefinition());
         var sidebar=new ScrollViewer { Content=navigation,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Background=new SolidColorBrush(Color.FromRgb(15,18,20)) };navigation.Margin=new Thickness(16,24,6,16);root.Children.Add(sidebar);
         navigation.Children.Add(Ui.Heading("MOVY",26));Nav("Home",()=>ShowHome());Nav("Search",()=>ShowSearch());Nav("My List",()=>ShowSaved());Nav("Account",()=>ShowAccount());navigation.Children.Add(Ui.Heading("LIBRARIES",12));
         Nav("Movies",()=>ShowRecommended("movie"));Nav("Series",()=>ShowRecommended("tv"));
         foreach(var provider in Provider.All){var captured=provider;Nav(provider.Name,()=>ShowProvider(captured));}
-        navigation.Children.Add(Ui.Text("Windows preview · v1.20\nMovy catalog · native playback",12,Ui.Muted));
+        navigation.Children.Add(Ui.Text("Windows preview · v"+App.Version+"\nMovy catalog · native playback",12,Ui.Muted));
         Grid.SetColumn(scroll,1);root.Children.Add(scroll);Content=root;connections=new BrowserConnections(root);
         PreviewKeyDown+=(_,e)=>{if(e.Key is Key.BrowserBack || e.Key==Key.Escape){Back();e.Handled=true;}};
         Closed+=(_,_)=>{lifetime.Cancel();connections.Dispose();};

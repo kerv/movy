@@ -4,6 +4,7 @@ using System.Windows;
 namespace Movy.Desktop;
 public partial class App : Application
 {
+    public static string Version=>typeof(App).Assembly.GetName().Version?.ToString(2)??"preview";
     public static string DataDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MovyDesktop");
     protected override void OnStartup(StartupEventArgs e)
     {
