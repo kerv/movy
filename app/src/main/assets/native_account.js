@@ -38,23 +38,29 @@
     profiles = Array.isArray(profiles) ? profiles : profiles.profiles || [];
     var active = state.profile && profiles.find(function (p) { return String(p.id) === String(state.profile.id); });
     var result = {signedIn: true, username: user.username || state.username, email: user.email || '',
-      avatar: user.avatar || '', profile: active || null, profiles: profiles, rows: [], partial: false};
+      avatar: user.avatar || '', profile: active || null, profiles: profiles, rows: [], completedSeries: [], recentHistory: [], partial: false};
     if (!active) return result;
     state.profile = active;
     var path = '/account/' + encodeURIComponent(state.username);
     var responses = await Promise.allSettled([api(path + '/history', 'GET', null, state, true), api(path + '/lists', 'GET', null, state, true)]);
+    function mediaType(t) { var explicit=String(t.mediaType || t.media_type || '').toLowerCase();return explicit==='tv'||/\/tv\/\d+/.test(t.slug||t.url||'')?'tv':'movie'; }
     function title(t, history) {
-      var type = t.mediaType || t.media_type || 'movie';
+      var type = mediaType(t);
       var slug = t.slug || t.url || '/' + type + '/' + t.id;
       try { slug = new URL(slug, 'https://www.movy.sx').pathname; } catch (_) { return null; }
       if (!/^\/(movie|tv)\/\d+(?:\/\d+\/\d+)?$/.test(slug)) return null;
       if (history && type === 'tv' && t.season && t.currentEpisode) slug = '/tv/' + t.id + '/' + t.season + '/' + t.currentEpisode;
       return {id: t.id, title: t.title || t.name || 'Untitled', slug: slug, poster: t.poster || '',
         image: t.image || t.background || '', release_date: t.release_date || '', rating: t.rating || 0,
+        durationMs: history ? Math.max(0, Math.round((t.totalDuration || 0) * 1000)) : 0,
         resumeMs: history ? Math.max(0, Math.round((t.currentTime || 0) * 1000)) : 0};
     }
     if (responses[0].status === 'fulfilled') {
-      var history = (responses[0].value.history || []).filter(function (t) { return t.currentTime > 0 && (!t.totalDuration || t.currentTime < t.totalDuration - 30); }).map(function (t) { return title(t, true); }).filter(Boolean);
+      var allHistory = responses[0].value.history || [];
+      function completed(t) { return t.totalDuration > 0 && t.currentTime >= Math.max(t.totalDuration * .95, t.totalDuration - 60); }
+      var history = allHistory.filter(function (t) { return t.currentTime > 0 && !completed(t); }).slice(0,40).map(function (t) { return title(t, true); }).filter(Boolean);
+      result.completedSeries = allHistory.filter(function(t) { return mediaType(t) === 'tv' && completed(t); }).slice(0,40).map(function(t) { var item=title(t,true);if(item)item.resumeMs=0;return item; }).filter(Boolean);
+      result.recentHistory = allHistory.filter(function(t) { return t.currentTime > 0; }).slice(0,40).map(function(t) { return title(t,false); }).filter(Boolean);
       if (history.length) result.rows.push({name: 'Continue Watching · ' + active.name, titles: history});
     } else result.partial = true;
     if (responses[1].status === 'fulfilled') {

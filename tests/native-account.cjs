@@ -23,7 +23,7 @@ const { chromium } = require('playwright');
       else if (path.endsWith('/verify-pin')) {
         if (request.postDataJSON().pin !== '1234') { await route.fulfill({ status: 403, headers, body: '{}' }); return; }
         data = { valid: true };
-      } else if (path.endsWith('/history')) data = { history: [{ id: 1399, name: 'Series', url: '/tv/1399', mediaType: 'tv', season: 2, currentEpisode: 3, currentTime: 123, totalDuration: 3000 }] };
+      } else if (path.endsWith('/history')) data = { history: [{ id: 1399, name: 'Series', url: '/tv/1399', mediaType: 'tv', season: 2, currentEpisode: 3, currentTime: 123, totalDuration: 3000 },{id:10,name:'Completed series',mediaType:'tv',season:1,currentEpisode:10,currentTime:2995,totalDuration:3000},{id:11,title:'Completed movie',mediaType:'movie',currentTime:6999,totalDuration:7000}] };
       else if (path.endsWith('/lists')) data = [{ name: 'Weekend', items: [{ id: 603, title: 'The Matrix', mediaType: 'movie' }] }];
       else data = {};
       await route.fulfill({ status: 200, headers, body: JSON.stringify(data) });
@@ -46,6 +46,12 @@ const { chromium } = require('playwright');
     const history = selected.snapshot.rows.find(row => row.name.startsWith('Continue Watching'));
     assert.equal(history.titles[0].slug, '/tv/1399/2/3');
     assert.equal(history.titles[0].resumeMs, 123000);
+    assert.equal(history.titles[0].durationMs, 3000000);
+    assert.equal(history.titles.length, 1);
+    assert.equal(selected.snapshot.completedSeries.length, 1);
+    assert.equal(selected.snapshot.completedSeries[0].slug, '/tv/10/1/10');
+    assert.equal(selected.snapshot.completedSeries[0].resumeMs, 0);
+    assert.equal(selected.snapshot.recentHistory.length, 3);
     assert.ok(selected.snapshot.rows.some(row => row.name === 'Weekend'));
     const denied = await request('profile', { id: 2, pin: '0000' });
     assert.equal(denied.ok, false);

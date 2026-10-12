@@ -19,7 +19,7 @@ import java.util.*;
 
 /** Native browsing and episode selection. Browser resolution runs only on Play. */
 public class NativeActivity extends android.app.Activity {
-    private static final int BG=0xff090d16, PANEL=0xff171e2c, MUTED=0xffb0bbcb, ACCENT=0xffeb3349;
+    private static final int BG=0xff111416, PANEL=0xff20252a, MUTED=0xffaab0b6, ACCENT=0xffe9ae36;
     private FrameLayout root, loading;
     private LinearLayout content, results, episodes;
     private TextView loadingText;
@@ -39,6 +39,48 @@ public class NativeActivity extends android.app.Activity {
     private LinearLayout accountRows;
     private ImageView loadingArt;
     private TextView loadingTitle;
+    private ScrollView mainScroll;
+    private FrameLayout sidebar;
+    private final List<TextView> navigationLabels=new ArrayList<>();
+    private boolean sidebarExpanded;
+    private Button entryControl;
+    private android.view.ViewTreeObserver.OnGlobalFocusChangeListener navigationFocus;
+    private CatalogClient.Provider activeProvider;
+    private String libraryType="movie",pendingSearch="";
+    private CatalogClient.Sort librarySort=CatalogClient.Sort.RELEASE_DESC;
+    private CatalogClient.Genre libraryGenre;
+    private final Map<String,List<CatalogClient.Genre>> genreCache=new HashMap<>();
+    private List<ProviderSection> pageSections=new ArrayList<>();
+    private final Deque<ScreenState> history=new ArrayDeque<>();
+    private boolean detailLoading;
+    private int screenColor=BG;
+    private final Set<String> nextLookups=new HashSet<>();
+    private final Map<String,CatalogClient.Title> accountNext=new HashMap<>();
+    private final Map<String,Long> accountNextUpdated=new HashMap<>();
+    private long homeLoadedAt;
+
+    /** Keep the actual card trees and scroll offsets, not just page numbers. */
+    private final class ScreenState {
+        final List<View> children=new ArrayList<>();final View focus=root.findFocus();final Object focusTag=focusTagOf(focus);final String name=screen,homeFilter=filter,type=libraryType,search=pendingSearch;
+        final LinearLayout body=content,searchResults=results,episodeRows=episodes,accountContent=accountRows;
+        final FrameLayout overlay=loading,nav=sidebar;final ScrollView scroll=mainScroll;final int scrollY=mainScroll==null?0:mainScroll.getScrollY(),selectedSeason=season,color=screenColor;
+        final TextView status=loadingText,title=loadingTitle;final ImageView art=loadingArt;final Button top=entryControl;
+        final List<TextView> labels=new ArrayList<>(navigationLabels);final List<ProviderSection> sections=pageSections;
+        final CatalogClient.Title detail=detailTitle;final boolean pendingDetails=detailLoading;final CatalogClient.Provider provider=activeProvider;final CatalogClient.Sort sort=librarySort;final CatalogClient.Genre genre=libraryGenre;
+        ScreenState(){for(int i=0;i<root.getChildCount();i++)children.add(root.getChildAt(i));}
+    }
+    private void rememberScreen(){if(content==null)return;history.addLast(new ScreenState());while(history.size()>8)history.removeFirst();releaseArtwork(root);}
+    private void releaseArtwork(View view){if(view instanceof ImageView)((ImageView)view).setImageDrawable(null);if(view instanceof android.view.ViewGroup){android.view.ViewGroup group=(android.view.ViewGroup)view;for(int i=0;i<group.getChildCount();i++)releaseArtwork(group.getChildAt(i));}}
+    boolean restoreScreen(){
+        if(history.isEmpty())return false;cancelResolver();if(searchDebouncer!=null)searchDebouncer.cancel();if(accountClient!=null){accountClient.close();accountClient=null;}generation++;
+        ScreenState state=history.removeLast();root.removeAllViews();screen=state.name;filter=state.homeFilter;libraryType=state.type;pendingSearch=state.search;activeProvider=state.provider;librarySort=state.sort;libraryGenre=state.genre;
+        content=state.body;results=state.searchResults;episodes=state.episodeRows;accountRows=state.accountContent;loading=state.overlay;loadingText=state.status;loadingTitle=state.title;loadingArt=state.art;mainScroll=state.scroll;sidebar=state.nav;entryControl=state.top;detailTitle=state.detail;detailLoading=state.pendingDetails;season=state.selectedSeason;screenColor=state.color;pageSections=state.sections;
+        navigationLabels.clear();navigationLabels.addAll(state.labels);sidebarExpanded=false;root.setBackgroundColor(screenColor);for(View child:state.children)root.addView(child);loading.setVisibility(View.GONE);setSidebarExpanded(false);
+        for(ProviderSection section:pageSections)if(section.fetching){section.fetching=false;section.more.setEnabled(true);section.more.setText(section.type.equals("movie")?"Retry movies":"Retry series");section.status.setText("Current titles kept. Retry to load the next page.");}
+        if(detailLoading&&detailTitle!=null)showDetail(detailTitle);else if(!pendingSearch.isEmpty()&&screen.equals("search"))search(pendingSearch);
+        int token=generation;root.post(()->{if(token!=generation)return;View target=state.focus!=null&&state.focus.isShown()?state.focus:state.focusTag==null?null:content.findViewWithTag(state.focusTag);if(target!=null)target.requestFocus();else if(entryControl!=null)entryControl.requestFocus();mainScroll.scrollTo(0,state.scrollY);});
+        if(accountRows!=null){renderAccountRows();readAccount(false);}return true;
+    }
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
@@ -58,8 +100,11 @@ public class NativeActivity extends android.app.Activity {
     }
     private void addButton(LinearLayout row,String title,Runnable click){Button b=button(title,click);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(44));p.rightMargin=dp(10);row.addView(b,p);}
     private void begin(String name){
-        cancelResolver();if(searchDebouncer!=null)searchDebouncer.cancel();if(accountClient!=null){accountClient.close();accountClient=null;}accountRows=null;screen=name;generation++;root.removeAllViews();ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setSmoothScrollingEnabled(true);
-        content=column();content.setPadding(dp(32),dp(18),dp(32),dp(40));scroll.addView(content);root.addView(scroll);
+        cancelResolver();if(searchDebouncer!=null)searchDebouncer.cancel();if(accountClient!=null){accountClient.close();accountClient=null;}
+        if(name.equals("home"))history.clear();else if(!name.equals(screen))rememberScreen();
+        accountRows=null;pageSections=new ArrayList<>();activeProvider=null;detailLoading=false;pendingSearch="";screen=name;generation++;root.removeAllViews();screenColor=BG;root.setBackgroundColor(BG);
+        mainScroll=new ScrollView(this);mainScroll.setFillViewport(true);mainScroll.setSmoothScrollingEnabled(true);mainScroll.setDescendantFocusability(android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS);
+        content=column();content.setPadding(dp(24),dp(18),dp(24),dp(40));mainScroll.addView(content);FrameLayout.LayoutParams mainParams=new FrameLayout.LayoutParams(-1,-1);mainParams.leftMargin=dp(84);root.addView(mainScroll,mainParams);
         content.setAlpha(0);content.animate().alpha(1).setDuration(180).start();
         loading=new FrameLayout(this);loading.setBackgroundColor(BG);
         loadingArt=new ImageView(this);loadingArt.setScaleType(ImageView.ScaleType.CENTER_CROP);loading.addView(loadingArt,new FrameLayout.LayoutParams(-1,-1));
@@ -75,25 +120,46 @@ public class NativeActivity extends android.app.Activity {
     private void busy(boolean yes,String message){loadingText.setText(message);loading.setVisibility(yes?View.VISIBLE:View.GONE);if(yes){loading.setAlpha(0);loading.animate().alpha(1).setDuration(180).start();}}
     private void header(){
         LinearLayout bar=new LinearLayout(this);bar.setGravity(Gravity.CENTER_VERTICAL);
-        TextView logo=label("MOVY",25);logo.setTextColor(ACCENT);bar.addView(logo,new LinearLayout.LayoutParams(0,dp(48),1));
-        addButton(bar,"Home",()->{filter="All";showHome();});addButton(bar,"Search",this::showSearch);addButton(bar,"My List",this::showSaved);
-        addButton(bar,"Account",this::showAccount);content.addView(bar);
+        TextView logo=label(screen.equals("home")?"Home":screen.equals("movies")?"Movies":screen.equals("series")?"Series":screen.equals("provider")&&activeProvider!=null?activeProvider.name:screen.equals("genres")?"Categories":screen.equals("providers")?"Providers":screen.equals("detail")?"Title details":screen.equals("saved")?"My List":screen.equals("account")?"Account":"Search",24);bar.addView(logo,new LinearLayout.LayoutParams(0,dp(48),1));
+        entryControl=button("Libraries",()->{setSidebarExpanded(true);sidebar.findViewWithTag("nav-home").requestFocus();});bar.addView(entryControl,new LinearLayout.LayoutParams(dp(116),dp(40)));content.addView(bar);buildSidebar();focusEntry();
+    }
+    private void focusEntry(){int token=generation;entryControl.requestFocus();mainScroll.scrollTo(0,0);root.post(()->{if(token==generation){if(!screen.equals("detail")||root.findFocus()==null)entryControl.requestFocus();mainScroll.scrollTo(0,0);}});}
+    private void buildSidebar(){
+        navigationLabels.clear();sidebarExpanded=false;sidebar=new FrameLayout(this);sidebar.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,new int[]{0xff101315,0xfa101315}));sidebar.setElevation(dp(12));
+        ScrollView scroll=new ScrollView(this);scroll.setVerticalScrollBarEnabled(false);LinearLayout items=column();items.setPadding(dp(8),dp(18),dp(8),dp(22));scroll.addView(items);sidebar.addView(scroll);
+        TextView brand=label("M",23);brand.setGravity(Gravity.CENTER);brand.setTextColor(ACCENT);items.addView(brand,new LinearLayout.LayoutParams(-1,dp(40)));
+        navItem(items,"Account","account",screen.equals("account"),this::showAccount);navItem(items,"My List","saved",screen.equals("saved"),this::showSaved);navItem(items,"Search","search",screen.equals("search"),this::showSearch);navItem(items,"Home","home",screen.equals("home"),()->{filter="All";showHome();});
+        TextView libraries=text("LIBRARIES",11);libraries.setTextColor(MUTED);libraries.setPadding(dp(12),dp(20),0,dp(10));navigationLabels.add(libraries);libraries.setVisibility(View.GONE);items.addView(libraries);
+        navItem(items,"Movies","movies",screen.equals("movies")&&activeProvider==null,()->showLibrary("movie",null,null,CatalogClient.Sort.RELEASE_DESC));navItem(items,"Series","series",screen.equals("series")&&activeProvider==null,()->showLibrary("tv",null,null,CatalogClient.Sort.RELEASE_DESC));navItem(items,"Categories","genres",screen.equals("genres"),()->showGenres("movie"));navItem(items,"Providers","providers",screen.equals("providers"),this::showProviders);
+        for(CatalogClient.Provider provider:CatalogClient.PROVIDERS)navItem(items,provider.name,"brand:"+provider.name.charAt(0),activeProvider==provider,()->showProvider(provider));
+        FrameLayout.LayoutParams params=new FrameLayout.LayoutParams(dp(68),-1,Gravity.LEFT);root.addView(sidebar,Math.max(0,root.getChildCount()-1),params);
+        if(navigationFocus==null){navigationFocus=(oldFocus,newFocus)->setSidebarExpanded(isInside(newFocus,sidebar));root.getViewTreeObserver().addOnGlobalFocusChangeListener(navigationFocus);}
+    }
+    private boolean isInside(View child,View ancestor){while(child!=null){if(child==ancestor)return true;child=child.getParent() instanceof View?(View)child.getParent():null;}return false;}
+    private Object focusTagOf(View view){while(view!=null&&view!=root){if(view.getTag()!=null)return view.getTag();view=view.getParent() instanceof View?(View)view.getParent():null;}return null;}
+    private void setSidebarExpanded(boolean expanded){if(sidebar==null)return;sidebarExpanded=expanded;android.view.ViewGroup.LayoutParams params=sidebar.getLayoutParams();if(params!=null&&params.width!=dp(expanded?228:68)){params.width=dp(expanded?228:68);sidebar.setLayoutParams(params);mainScroll.animate().alpha(expanded?.5f:1f).setDuration(140).start();}for(TextView label:navigationLabels)label.setVisibility(expanded?View.VISIBLE:View.GONE);}
+    private void navItem(LinearLayout parent,String name,String icon,boolean selected,Runnable action){
+        LinearLayout item=new LinearLayout(this);item.setGravity(Gravity.CENTER_VERTICAL);item.setPadding(dp(12),0,dp(10),0);item.setFocusable(true);item.setClickable(true);item.setTag("nav-"+icon);item.setContentDescription(name);item.setBackground(rounded(selected?0xff30363a:Color.TRANSPARENT,0));
+        NavigationIcon glyph=new NavigationIcon(this,icon);item.addView(glyph,new LinearLayout.LayoutParams(dp(24),dp(24)));TextView caption=label(name,14);caption.setPadding(dp(14),0,0,0);caption.setVisibility(View.GONE);navigationLabels.add(caption);item.addView(caption,new LinearLayout.LayoutParams(0,-2,1));LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,dp(44));params.bottomMargin=dp(3);parent.addView(item,params);
+        item.setOnClickListener(v->action.run());item.setOnFocusChangeListener((v,focused)->{if(focused)setSidebarExpanded(true);item.setBackground(rounded(focused?Color.WHITE:selected?0xff30363a:Color.TRANSPARENT,0));caption.setTextColor(focused?BG:Color.WHITE);glyph.setColor(focused?BG:0xffccd1d7);});
     }
     private void showHome(){
         begin("home");header();
+        if(homeRows!=null&&System.currentTimeMillis()-homeLoadedAt>15*60*1000){homeRows=null;providersLoaded=false;}
         if(homeRows!=null){renderHome();return;}
-        int token=generation;busy(true,"Discovering your next watch…");CatalogClient.home((rows,error)->{if(token!=generation)return;busy(false,"");if(error!=null)error("Couldn’t load Movy’s catalogue.",this::showHome);else{homeRows=rows;renderHome();}});
+        int token=generation;busy(true,"Discovering your next watch…");CatalogClient.home((rows,error)->{if(token!=generation)return;busy(false,"");if(error!=null)error("Couldn’t load Movy’s catalogue.",this::showHome);else{homeRows=rows;homeLoadedAt=System.currentTimeMillis();renderHome();}});
     }
     private void renderHome(){
         LinearLayout tabs=new LinearLayout(this);tabs.setPadding(0,dp(12),0,dp(14));
-        for(String value:new String[]{"All","Movies","Series"})addButton(tabs,(filter.equals(value)?"● ":"")+value,()->{filter=value;showHome();});
+        addButton(tabs,"Movie library",()->showLibrary("movie",null,null,CatalogClient.Sort.RELEASE_DESC));addButton(tabs,"Series library",()->showLibrary("tv",null,null,CatalogClient.Sort.RELEASE_DESC));addButton(tabs,"Categories",()->showGenres("movie"));
         addButton(tabs,"Refresh",()->{homeRows=null;providersLoaded=false;showHome();});content.addView(tabs);
-        LinearLayout providers=new LinearLayout(this);providers.setPadding(dp(6),dp(8),dp(6),dp(20));providers.setClipChildren(false);for(CatalogClient.Provider p:CatalogClient.PROVIDERS)providers.addView(providerTile(p));HorizontalScrollView providerStrip=new HorizontalScrollView(this);providerStrip.setHorizontalScrollBarEnabled(false);providerStrip.setSmoothScrollingEnabled(true);providerStrip.setClipChildren(false);providerStrip.addView(providers);content.addView(providerStrip);
+        LinearLayout providers=new LinearLayout(this);providers.setPadding(dp(6),dp(8),dp(6),dp(20));providers.setClipChildren(false);for(CatalogClient.Provider p:CatalogClient.PROVIDERS)providers.addView(providerTile(p));HorizontalScrollView providerStrip=new HorizontalScrollView(this);providerStrip.setHorizontalScrollBarEnabled(false);providerStrip.setSmoothScrollingEnabled(true);providerStrip.setClipChildren(false);providerStrip.addView(providers);
         List<CatalogClient.Row> rows=new ArrayList<>();for(CatalogClient.Row row:homeRows){List<CatalogClient.Title> titles=new ArrayList<>();for(CatalogClient.Title title:row.titles)if(filter.equals("All")||(filter.equals("Series")==title.isSeries()))titles.add(title);if(!titles.isEmpty())rows.add(new CatalogClient.Row(row.name,titles));}
-        if(!rows.isEmpty())hero(rows.get(0).titles.get(0),null,false);
         accountRows=column();content.addView(accountRows);renderAccountRows();readAccount(false);
-        List<CatalogClient.Title> resume=library.titles("resume:");if(!resume.isEmpty())rail(new CatalogClient.Row("Continue Watching · This TV",resume));
+        if(!rows.isEmpty())hero(rows.get(0).titles.get(0),null,false);
+        section("Streaming libraries");content.addView(providerStrip);
         List<CatalogClient.Title> saved=library.titles("saved:");if(!saved.isEmpty())rail(new CatalogClient.Row("My List · This TV",saved));
+        List<CatalogClient.Title> recent=library.titles("history:");if(!recent.isEmpty())rail(new CatalogClient.Row("Recently Watched · This TV",recent));
         for(CatalogClient.Row row:rows)rail(row);
         if(!providersLoaded&&!providersLoading){
             providersLoading=true;int token=generation;
@@ -122,7 +188,7 @@ public class NativeActivity extends android.app.Activity {
             String resumeKey=resumeKey(title);
             int s=1,e=1;String[] parts=resumeKey.split("/");if(title.isSeries()&&parts.length>=5){try{s=Integer.parseInt(parts[3]);e=Integer.parseInt(parts[4]);}catch(NumberFormatException ignored){}}
             final int playSeason=s,playEpisode=e;
-            long pos=resumePosition(title,resumeKey);addButton(actions,pos>0?"▶ Resume":"▶ Play",()->play(title,playSeason,playEpisode,false));
+            CatalogClient.Title queued=nextFor(title);long pos=resumePosition(title,resumeKey);addButton(actions,title.nextEpisode||(queued!=null&&queued.slug.equals(resumeKey))?"▶ Next episode":pos>0?"▶ Resume":"▶ Play",()->play(title,playSeason,playEpisode,false));
             if(pos>0)addButton(actions,"Start over",()->play(title,playSeason,playEpisode,true));
             Button save=button(library.saved(title.slug)?"✓ In My List":"+ My List",()->{});save.setOnClickListener(v->{library.toggle(title);save.setText(library.saved(title.slug)?"✓ In My List":"+ My List");});LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-2,dp(44));sp.rightMargin=dp(10);actions.addView(save,sp);
         }else addButton(actions,"Explore title",()->showDetail(title));
@@ -150,15 +216,48 @@ public class NativeActivity extends android.app.Activity {
         showProvider(provider,false);
     }
     private void showProvider(CatalogClient.Provider provider,boolean recent){
-        begin("provider");header();section((recent?"Recently released on ":"Popular on ")+provider.name);
+        begin("provider");activeProvider=provider;screenColor=androidx.core.graphics.ColorUtils.blendARGB(BG,provider.color,.13f);root.setBackgroundColor(screenColor);header();providerBanner(provider);
         LinearLayout filters=new LinearLayout(this);addButton(filters,recent?"Popular":"✓ Popular",()->showProvider(provider,false));addButton(filters,recent?"✓ Recently released":"Recently released",()->showProvider(provider,true));content.addView(filters);
+        LinearLayout browse=new LinearLayout(this);addButton(browse,"Movie library",()->showLibrary("movie",provider,null,CatalogClient.Sort.RELEASE_DESC));addButton(browse,"Series library",()->showLibrary("tv",provider,null,CatalogClient.Sort.RELEASE_DESC));content.addView(browse);
         TextView note=text(recent?"Newest original movie releases and series premieres, not new episodes or newly added titles · US movie availability":"Movy metadata popularity ranking, not weekly charts · US movie availability",14);note.setTextColor(MUTED);content.addView(note);
         LinearLayout jump=new LinearLayout(this);content.addView(jump);
         ProviderSection movies=createProviderSection(recent?"Recently Released Movies":"Popular Movies","movie");
         ProviderSection series=createProviderSection(recent?"Recently Premiered Series":"Popular Series","tv");
         addButton(jump,"Browse movies ↓",()->focusProviderSection(movies));addButton(jump,"Browse series ↓",()->focusProviderSection(series));
-        int token=generation;movies.more.setOnClickListener(v->loadProviderSection(provider,recent,movies,token));series.more.setOnClickListener(v->loadProviderSection(provider,recent,series,token));
-        loadProviderSection(provider,recent,movies,token);loadProviderSection(provider,recent,series,token);
+        movies.more.setOnClickListener(v->loadProviderSection(provider,recent,movies));series.more.setOnClickListener(v->loadProviderSection(provider,recent,series));
+        loadProviderSection(provider,recent,movies);loadProviderSection(provider,recent,series);
+    }
+    private void providerBanner(CatalogClient.Provider provider){
+        LinearLayout banner=new LinearLayout(this);banner.setGravity(Gravity.CENTER_VERTICAL);banner.setPadding(dp(24),dp(22),dp(24),dp(22));banner.setBackground(providerBackground(provider,false));
+        ImageView logo=new ImageView(this);logo.setScaleType(ImageView.ScaleType.FIT_CENTER);banner.addView(logo,new LinearLayout.LayoutParams(dp(126),dp(62)));image(logo,provider.logo);LinearLayout copy=column();copy.setPadding(dp(28),0,0,0);copy.addView(label(provider.name+" library",28));TextView note=text("Recommended  /  Movies  /  Series",14);note.setTextColor(MUTED);note.setPadding(0,dp(10),0,0);copy.addView(note);banner.addView(copy,new LinearLayout.LayoutParams(0,-2,1));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.topMargin=dp(14);p.bottomMargin=dp(18);content.addView(banner,p);
+    }
+    private void showProviders(){begin("providers");header();section("Streaming libraries");LinearLayout row=null;int columns=Math.max(1,(Math.round(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density)-132)/164);int i=0;for(CatalogClient.Provider provider:CatalogClient.PROVIDERS){if(i++%columns==0){row=new LinearLayout(this);row.setPadding(0,dp(10),0,dp(14));content.addView(row);}row.addView(providerTile(provider));}}
+    private void showLibrary(String type,CatalogClient.Provider provider,CatalogClient.Genre genre,CatalogClient.Sort sort){
+        begin(type.equals("movie")?"movies":"series");libraryType=type;activeProvider=provider;libraryGenre=genre;librarySort=sort;header();if(provider!=null)providerBanner(provider);
+        TextView hint=text("Library · "+(provider==null?"Movy catalogue":provider.name)+(type.equals("tv")?" · Series dates are first premieres":""),14);hint.setTextColor(MUTED);content.addView(hint);
+        LinearLayout tabs=new LinearLayout(this);tabs.setPadding(0,dp(16),0,dp(12));addButton(tabs,"Recommended",()->{if(provider==null)showRecommended(type);else showProvider(provider);});addButton(tabs,"✓ Library",()->{});addButton(tabs,"Categories",()->showGenres(type,provider));content.addView(tabs);
+        LinearLayout controls=new LinearLayout(this);addButton(controls,sort.label,()->chooseSort(type,provider,genre,sort));addButton(controls,genre==null?"All categories":genre.name,()->chooseGenre(type,provider,sort));addButton(controls,"Refresh",()->showLibrary(type,provider,genre,sort));content.addView(controls);
+        ProviderSection section=createProviderSection(genre==null?(type.equals("movie")?"All movies":"All series"):genre.name,type);
+        section.more.setOnClickListener(v->loadLibrarySection(type,provider,genre,sort,section));loadLibrarySection(type,provider,genre,sort,section);
+    }
+    private void chooseSort(String type,CatalogClient.Provider provider,CatalogClient.Genre genre,CatalogClient.Sort current){
+        CatalogClient.Sort[] options=CatalogClient.Sort.values();String[] names=new String[options.length];for(int i=0;i<names.length;i++)names[i]=(options[i]==current?"✓ ":"")+options[i].label;
+        new AlertDialog.Builder(this).setTitle("Sort library").setItems(names,(d,index)->showLibrary(type,provider,genre,options[index])).setNegativeButton("Cancel",null).show();
+    }
+    private void withGenres(String type,CatalogClient.Result<List<CatalogClient.Genre>> callback){List<CatalogClient.Genre> cached=genreCache.get(type);if(cached!=null){callback.accept(cached,null);return;}CatalogClient.genres(type,(genres,error)->{if(error==null)genreCache.put(type,genres);callback.accept(genres,error);});}
+    private void chooseGenre(String type,CatalogClient.Provider provider,CatalogClient.Sort sort){int token=generation;withGenres(type,(genres,error)->{if(token!=generation)return;if(error!=null){Toast.makeText(this,"Categories could not load. Please try again.",Toast.LENGTH_LONG).show();return;}String[] names=new String[genres.size()+1];names[0]="All categories";for(int i=0;i<genres.size();i++)names[i+1]=genres.get(i).name;new AlertDialog.Builder(this).setTitle("Filter by category").setItems(names,(d,index)->showLibrary(type,provider,index==0?null:genres.get(index-1),sort)).setNegativeButton("Cancel",null).show();});}
+    private void showRecommended(String type){
+        begin(type.equals("movie")?"movies":"series");libraryType=type;header();LinearLayout tabs=new LinearLayout(this);addButton(tabs,"✓ Recommended",()->{});addButton(tabs,"Library",()->showLibrary(type,null,null,CatalogClient.Sort.RELEASE_DESC));addButton(tabs,"Categories",()->showGenres(type));content.addView(tabs);
+        LinearLayout rows=column();content.addView(rows);int token=generation;CatalogClient.Result<List<CatalogClient.Row>> render=(all,error)->{if(token!=generation)return;if(error!=null){rows.addView(button("Retry recommendations",()->showRecommended(type)));return;}LinearLayout main=content;content=rows;boolean featured=false;for(CatalogClient.Row row:all){List<CatalogClient.Title> titles=new ArrayList<>();for(CatalogClient.Title title:row.titles)if(title.isSeries()==type.equals("tv"))titles.add(title);if(!titles.isEmpty()){if(!featured){hero(titles.get(0),null,false);featured=true;}rail(new CatalogClient.Row(row.name,titles));}}content=main;};if(homeRows!=null)render.accept(homeRows,null);else CatalogClient.home(render);
+    }
+    private void showGenres(String type){showGenres(type,null);}
+    private void showGenres(String type,CatalogClient.Provider provider){
+        begin("genres");libraryType=type;activeProvider=provider;header();section("Browse by category"+(provider==null?"":" · "+provider.name));LinearLayout tabs=new LinearLayout(this);addButton(tabs,type.equals("movie")?"✓ Movies":"Movies",()->showGenres("movie",provider));addButton(tabs,type.equals("tv")?"✓ Series":"Series",()->showGenres("tv",provider));content.addView(tabs);
+        LinearLayout grid=column();content.addView(grid);int token=generation;withGenres(type,(genres,error)->{if(token!=generation)return;if(error!=null){grid.addView(button("Retry categories",()->showGenres(type,provider)));return;}int columns=Math.max(1,(Math.round(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density)-132)/204);LinearLayout row=null;int i=0;for(CatalogClient.Genre genre:genres){if(i++%columns==0){row=new LinearLayout(this);row.setPadding(0,dp(12),0,dp(12));grid.addView(row);}Button category=button(genre.name,()->showLibrary(type,provider,genre,CatalogClient.Sort.RELEASE_DESC));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(dp(190),dp(90));p.rightMargin=dp(14);row.addView(category,p);}});
+    }
+    private void loadLibrarySection(String type,CatalogClient.Provider provider,CatalogClient.Genre genre,CatalogClient.Sort sort,ProviderSection section){
+        if(section.fetching||section.ended)return;int token=generation;section.fetching=true;section.more.setEnabled(false);section.more.setText("Loading…");section.status.setText("Loading page "+(section.page+1)+"…");
+        CatalogClient.libraryPage(type,provider,genre==null?0:genre.id,sort,section.page+1,(page,error)->finishCatalogPage(section,token,page,error));
     }
     private View providerTile(CatalogClient.Provider provider){
         LinearLayout tile=column();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(12),dp(12),dp(12),dp(10));tile.setFocusable(true);tile.setClickable(true);tile.setContentDescription("Browse "+provider.name);tile.setBackground(providerBackground(provider,false));
@@ -181,8 +280,8 @@ public class NativeActivity extends android.app.Activity {
         LinearLayout grid=column();grid.setClipChildren(false);block.addView(grid);
         TextView status=text("Loading…",14);status.setTextColor(MUTED);status.setPadding(0,dp(12),0,dp(12));block.addView(status);
         Button more=button(type.equals("movie")?"Load more movies":"Load more series",()->{});block.addView(more,new LinearLayout.LayoutParams(dp(220),dp(46)));
-        int width=Math.round(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density)-64;
-        return new ProviderSection(type,block,grid,preview,status,more,Math.max(1,width/204));
+        int width=Math.round(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density)-138;
+        ProviderSection section=new ProviderSection(type,block,grid,preview,status,more,Math.max(1,width/204));pageSections.add(section);return section;
     }
     private void focusProviderSection(ProviderSection section){if(section.grid.getChildCount()>0)((LinearLayout)section.grid.getChildAt(0)).getChildAt(0).requestFocus();else section.more.requestFocus();}
     View appendProviderPage(ProviderSection section,CatalogClient.ProviderPage page){
@@ -193,19 +292,20 @@ public class NativeActivity extends android.app.Activity {
             View item=card(title,section.preview);row.addView(item);if(first==null)first=item;added++;
         }
         section.page=page.page;section.ended=page.titles.isEmpty()||page.page>=Math.min(500,page.totalPages);section.status.setText(section.seen.size()+" "+(section.type.equals("movie")?"movies":"series")+" loaded · "+added+" new · Page "+section.page);
-        section.more.setEnabled(!section.ended);section.more.setText(section.ended?"All available titles loaded":section.type.equals("movie")?"Load more movies":"Load more series");return first;
+        section.more.setEnabled(!section.ended);section.more.setText(section.ended?(page.page>=500&&page.totalPages>500?"Catalogue page limit reached":"No more results"):section.type.equals("movie")?"Load more movies":"Load more series");return first;
     }
-    private void loadProviderSection(CatalogClient.Provider provider,boolean recent,ProviderSection section,int token){
-        if(section.fetching||section.ended)return;section.fetching=true;section.more.setEnabled(false);section.more.setText("Loading…");section.status.setText("Loading page "+(section.page+1)+"…");
+    private void loadProviderSection(CatalogClient.Provider provider,boolean recent,ProviderSection section){
+        if(section.fetching||section.ended)return;int token=generation;section.fetching=true;section.more.setEnabled(false);section.more.setText("Loading…");section.status.setText("Loading page "+(section.page+1)+"…");
         CatalogClient.providerPage(provider,section.type,section.page+1,recent,(page,error)->{
-            if(token!=generation)return;section.fetching=false;
-            if(error!=null){section.more.setEnabled(true);section.more.setText("Retry "+(section.type.equals("movie")?"movies":"series"));section.status.setText("Couldn’t load this page. Your current titles are still here.");return;}
-            boolean paging=section.page>0;View first=appendProviderPage(section,page);if(paging&&first!=null)first.post(()->{if(token==generation)first.requestFocus();});
+            finishCatalogPage(section,token,page,error);
         });
+    }
+    private void finishCatalogPage(ProviderSection section,int token,CatalogClient.ProviderPage page,Exception error){
+        if(token!=generation)return;section.fetching=false;if(error!=null){section.more.setEnabled(true);section.more.setText(section.type.equals("movie")?"Retry movies":"Retry series");section.status.setText("Couldn’t load this page. Your current titles are still here.");return;}boolean paging=section.page>0;View first=appendProviderPage(section,page);if(paging&&first!=null)first.post(()->{if(token==generation)first.requestFocus();});
     }
     private View card(CatalogClient.Title title,TextView preview){
         LinearLayout card=column();card.setTag(title.slug);card.setPadding(dp(8),dp(8),dp(8),dp(10));card.setBackground(rounded(PANEL,0));card.setFocusable(true);card.setClickable(true);
-        ImageView poster=new ImageView(this);poster.setScaleType(ImageView.ScaleType.CENTER_CROP);poster.setBackground(rounded(0xff263146,0));card.addView(poster,new LinearLayout.LayoutParams(-1,dp(220)));image(poster,title.poster);
+        ImageView poster=new ImageView(this);poster.setScaleType(ImageView.ScaleType.CENTER_CROP);poster.setBackground(rounded(0xff263146,0));card.addView(poster,new LinearLayout.LayoutParams(-1,dp(260)));image(poster,title.poster);
         TextView name=label(title.title,15);name.setMinLines(2);name.setPadding(0,dp(9),0,dp(5));card.addView(name,new LinearLayout.LayoutParams(-1,-2));
         TextView meta=text(metadata(title,null),12);meta.setTextColor(0xffdec881);card.addView(meta,new LinearLayout.LayoutParams(-1,-2));
         LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(190),-2);cp.rightMargin=dp(14);card.setLayoutParams(cp);
@@ -220,7 +320,7 @@ public class NativeActivity extends android.app.Activity {
         view.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener(){
             boolean fetching,displayed,failed;
             @Override public boolean onPreDraw(){
-                boolean visible=view.getGlobalVisibleRect(new android.graphics.Rect());
+                boolean visible=view.getGlobalVisibleRect(new android.graphics.Rect());if(displayed&&view.getDrawable()==null)displayed=false;
                 if(!visible){if(displayed){view.setImageDrawable(null);displayed=false;}failed=false;}
                 else if(!fetching&&!displayed&&!failed){
                     fetching=true;CatalogClient.image(url,(bitmap,error)->{fetching=false;if(isDestroyed()||!view.isAttachedToWindow())return;failed=bitmap==null;
@@ -232,9 +332,9 @@ public class NativeActivity extends android.app.Activity {
         });
     }
     private void showDetail(CatalogClient.Title title){
-        detailTitle=title;season=1;begin("detail");header();hero(title,null,true);
+        if(screen.equals("detail")&&detailTitle!=null&&!detailTitle.slug.equals(title.slug))rememberScreen();begin("detail");detailTitle=title;season=1;detailLoading=true;header();hero(title,null,true);
         TextView loadingDetail=text("Loading synopsis, cast, and episodes…",14);loadingDetail.setTextColor(MUTED);content.addView(loadingDetail);
-        int token=generation;CatalogClient.details(title,(data,error)->{if(token!=generation)return;if(error!=null){loadingDetail.setText("Details are unavailable. You can still try Play.");return;}
+        int token=generation;CatalogClient.details(title,(data,error)->{if(token!=generation)return;detailLoading=false;if(error!=null){loadingDetail.setText("Details are unavailable. You can still try Play.");return;}
             content.removeViews(1,content.getChildCount()-1);hero(title,data,true);detailExtras(title,data);
         });
     }
@@ -275,7 +375,7 @@ public class NativeActivity extends android.app.Activity {
         query.requestFocus();
     }
     private void search(String value){
-        if(searchDebouncer!=null)searchDebouncer.cancel();if(value.trim().isEmpty())return;int token=++generation;results.removeAllViews();TextView status=text("Searching…",15);status.setPadding(0,dp(20),0,0);results.addView(status);CatalogClient.search(value.trim(),(rows,error)->{if(token!=generation)return;results.removeAllViews();if(error!=null){results.addView(button("Try search again",()->search(value)));return;}LinearLayout main=content;content=results;for(CatalogClient.Row row:rows)if(row.titles.isEmpty())content.addView(text("No matching titles. Try another name.",18));else rail(row);content=main;});
+        if(searchDebouncer!=null)searchDebouncer.cancel();if(value.trim().isEmpty())return;pendingSearch=value;int token=++generation;results.removeAllViews();TextView status=text("Searching…",15);status.setPadding(0,dp(20),0,0);results.addView(status);CatalogClient.search(value.trim(),(rows,error)->{if(token!=generation)return;pendingSearch="";results.removeAllViews();if(error!=null){results.addView(button("Try search again",()->search(value)));return;}LinearLayout main=content;content=results;for(CatalogClient.Row row:rows)if(row.titles.isEmpty())content.addView(text("No matching titles. Try another name.",18));else rail(row);content=main;});
     }
     private void play(CatalogClient.Title title,int season,int episode,boolean restart){
         if(resolver!=null)return;final String path=title.isSeries()?"/tv/"+title.id+"/"+season+"/"+episode:title.slug;
@@ -290,16 +390,40 @@ public class NativeActivity extends android.app.Activity {
         resolver=null;loadingText.setText("Opening player…");Intent intent=new Intent(this,PlayerActivity.class);intent.setData(Uri.parse(url));intent.putExtra("headers",headers);intent.putExtra("tracks",tracks);intent.putExtra("title",title.title);intent.putExtra("poster",title.poster);intent.putExtra("key",path);intent.putExtra("position",restart?0:resumePosition(title,path));returnFromPlayer=true;startActivityForResult(intent,410);overridePendingTransition(0,0);
     }
     private void cancelResolver(){if(resolver!=null){resolver.close();resolver=null;}if(loading!=null)loading.setVisibility(View.GONE);}
-    private String resumeKey(CatalogClient.Title title){String local=library.resumeKey(title);if(library.position(local)>0)return local;return account==null?title.slug:account.resume(title).slug;}
-    private long resumePosition(CatalogClient.Title title,String path){long local=library.position(path);if(local>0)return local;CatalogClient.Title remote=account==null?title:account.resume(title);return remote.slug.equals(path)?remote.resumeMs:0;}
+    private CatalogClient.Title nextFor(CatalogClient.Title title){for(CatalogClient.Title next:library.titles("next:"))if(next.id==title.id&&next.isSeries()==title.isSeries())return next;if(account!=null&&account.profile!=null){String today=new java.text.SimpleDateFormat("yyyy-MM-dd",Locale.US).format(new Date());for(CatalogClient.Title completed:account.completedSeries)if(completed.id==title.id&&completed.isSeries()==title.isSeries()){CatalogClient.Title next=accountNext.get(accountScope()+":"+completed.slug);if(next!=null&&next.availableOn.compareTo(today)<=0)return next;}}return null;}
+    private String resumeKey(CatalogClient.Title title){if(title.nextEpisode)return title.slug;String local=library.resumeKey(title);if(library.position(local)>0)return local;CatalogClient.Title remote=account==null?title:account.resume(title);if(remote.resumeMs>0&&!library.completedTitle(title))return remote.slug;CatalogClient.Title next=nextFor(title);return next==null?title.slug:next.slug;}
+    private long resumePosition(CatalogClient.Title title,String path){long local=library.position(path);if(local>0)return local;if(library.completedTitle(title)||title.nextEpisode)return 0;CatalogClient.Title remote=account==null?title:account.resume(title);return remote.slug.equals(path)?remote.resumeMs:0;}
     private void renderAccountRows(){
-        if(accountRows==null)return;accountRows.removeAllViews();LinearLayout main=content;content=accountRows;
+        if(accountRows==null)return;View oldFocus=accountRows.findFocus();Object focusedTag=focusTagOf(oldFocus);accountRows.removeAllViews();LinearLayout main=content;content=accountRows;
+        if(screen.equals("home")){continueWatching();if(account!=null&&account.profile!=null&&!account.recentHistory.isEmpty())rail(new CatalogClient.Row("Recently Watched · "+account.profile.optString("name","Movy"),account.recentHistory));}
         if(account!=null&&account.signedIn){
             if(account.profile==null){content.addView(button("Choose your Movy profile",this::showAccount));}
-            else {for(CatalogClient.Row row:account.rows){if(screen.equals("saved")&&row.name.startsWith("Continue Watching"))continue;rail(row);}if(account.partial){TextView note=text("Some Movy account lists couldn’t refresh.",13);note.setTextColor(MUTED);content.addView(note);}}
+            else {for(CatalogClient.Row row:account.rows){if((screen.equals("saved")||screen.equals("home"))&&row.name.startsWith("Continue Watching"))continue;rail(row);}if(account.partial){TextView note=text("Some Movy account lists couldn’t refresh.",13);note.setTextColor(MUTED);content.addView(note);}}
         }else {TextView note=text("Connect your Movy account for your lists and Continue Watching.",14);note.setTextColor(MUTED);note.setPadding(0,dp(16),0,dp(8));content.addView(note);content.addView(button("Sign in to Movy",this::showAccount),new LinearLayout.LayoutParams(dp(180),dp(44)));}
-        content=main;
+        content=main;if(focusedTag!=null){View replacement=accountRows.findViewWithTag(focusedTag);if(replacement!=null)replacement.requestFocus();else if(entryControl!=null)entryControl.requestFocus();}
     }
+    private String accountScope(){return "account:"+(account==null?"":account.username)+":"+(account!=null&&account.profile!=null?account.profile.optString("id"):"none");}
+    private void continueWatching(){
+        LinkedHashMap<String,CatalogClient.Title> titles=new LinkedHashMap<>();List<CatalogClient.Title> local=new ArrayList<>(library.titles("resume:"));local.addAll(library.titles("next:"));Collections.sort(local,(a,b)->Long.compare(b.updatedMs,a.updatedMs));for(CatalogClient.Title title:local)if(!titles.containsKey(PlaybackStore.titleKey(title.slug)))titles.put(PlaybackStore.titleKey(title.slug),title);
+        if(account!=null&&account.profile!=null){String today=new java.text.SimpleDateFormat("yyyy-MM-dd",Locale.US).format(new Date());int token=generation;for(CatalogClient.Title completed:account.completedSeries){String lookup=accountScope()+":"+completed.slug;
+            if(accountNext.containsKey(lookup)&&System.currentTimeMillis()-(accountNextUpdated.containsKey(lookup)?accountNextUpdated.get(lookup):0L)>15*60*1000){accountNext.remove(lookup);accountNextUpdated.remove(lookup);}
+            if(accountNext.containsKey(lookup)){CatalogClient.Title next=accountNext.get(lookup);if(next!=null&&next.availableOn.compareTo(today)<=0&&!library.dismissed(next,accountScope())&&!titles.containsKey(PlaybackStore.titleKey(next.slug)))titles.put(PlaybackStore.titleKey(next.slug),next);}
+            else if(nextLookups.add(lookup))NextEpisodeFinder.find(completed,(next,error)->{nextLookups.remove(lookup);if(error==null){CatalogClient.Title title=null;if(next!=null)try{title=new CatalogClient.Title(new JSONObject().put("id",completed.id).put("title",completed.title).put("poster",completed.poster).put("image",completed.backdrop).put("slug",next.key).put("nextEpisode",true).put("availableOn",next.date));}catch(Exception ignored){}accountNext.put(lookup,title);accountNextUpdated.put(lookup,System.currentTimeMillis());if(token==generation&&screen.equals("home"))renderAccountRows();}});
+        }}
+        if(account!=null&&account.profile!=null)for(CatalogClient.Row row:account.rows)if(row.name.startsWith("Continue Watching"))for(CatalogClient.Title title:row.titles){String key=PlaybackStore.titleKey(title.slug);if(!titles.containsKey(key)&&!library.dismissed(title,accountScope())&&!library.completedTitle(title))titles.put(key,title);}
+        section("Continue Watching");if(titles.isEmpty()){TextView empty=text("Resume your movies and series here. Your Movy account and this TV’s activity appear together.",14);empty.setTextColor(MUTED);content.addView(empty);}else{HorizontalScrollView scroll=new HorizontalScrollView(this);scroll.setHorizontalScrollBarEnabled(false);scroll.setSmoothScrollingEnabled(true);LinearLayout cards=new LinearLayout(this);cards.setPadding(dp(6),dp(10),dp(6),dp(14));cards.setClipChildren(false);int count=0;for(CatalogClient.Title title:titles.values()){if(count++>=PlaybackStore.RECENT_LIMIT)break;cards.addView(continueCard(title));}scroll.addView(cards);content.addView(scroll);}
+        int token=generation;for(CatalogClient.Title completed:library.titles("pending_next:"))if(nextLookups.add(completed.slug))NextEpisodeFinder.find(completed,(next,error)->{nextLookups.remove(completed.slug);if(error==null){library.queueNext(completed,next);if(token==generation&&screen.equals("home"))renderAccountRows();}});
+    }
+    private View continueCard(CatalogClient.Title title){
+        FrameLayout card=new FrameLayout(this);card.setId(View.generateViewId());card.setTag("continue:"+PlaybackStore.titleKey(title.slug));card.setFocusable(true);card.setClickable(true);card.setBackground(rounded(PANEL,0));LinearLayout info=column();
+        ImageView art=new ImageView(this);art.setScaleType(ImageView.ScaleType.CENTER_CROP);info.addView(art,new LinearLayout.LayoutParams(-1,dp(144)));image(art,title.backdrop.isEmpty()?title.poster:title.backdrop);
+        TextView name=label(title.title,16);name.setMinLines(2);name.setPadding(dp(12),dp(10),dp(12),dp(6));info.addView(name);String[] parts=title.slug.split("/");String episode=title.isSeries()&&parts.length>=5?" · S"+parts[3]+" E"+parts[4]:"";TextView state=text((title.nextEpisode?"Up next":"Resume")+episode,13);state.setPadding(dp(12),0,dp(12),dp(12));state.setTextColor(ACCENT);info.addView(state);
+        if(title.durationMs>0&&title.resumeMs>0){ProgressBar progress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);progress.setMax(1000);progress.setProgress((int)Math.min(1000,title.resumeMs*1000/title.durationMs));progress.setProgressTintList(android.content.res.ColorStateList.valueOf(ACCENT));info.addView(progress,new LinearLayout.LayoutParams(-1,dp(4)));}
+        card.addView(info,new FrameLayout.LayoutParams(-1,-2));Button more=button("⋯",()->continueOptions(title));more.setId(View.generateViewId());more.setContentDescription("More options for "+title.title);more.setPadding(0,0,0,0);FrameLayout.LayoutParams mp=new FrameLayout.LayoutParams(dp(40),dp(36),Gravity.TOP|Gravity.RIGHT);mp.topMargin=dp(8);mp.rightMargin=dp(8);card.addView(more,mp);card.setNextFocusUpId(more.getId());more.setNextFocusDownId(card.getId());more.setNextFocusLeftId(card.getId());
+        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(264),-2);cp.rightMargin=dp(16);card.setLayoutParams(cp);card.setOnClickListener(v->resumeContinue(title));card.setOnLongClickListener(v->{continueOptions(title);return true;});card.setOnFocusChangeListener((v,focused)->{card.setBackground(rounded(PANEL,focused?Color.WHITE:0));card.animate().scaleX(focused?1.025f:1).scaleY(focused?1.025f:1).setDuration(150).start();});return card;
+    }
+    private void resumeContinue(CatalogClient.Title title){String[] parts=resumeKey(title).split("/");int s=1,e=1;try{if(parts.length>=5){s=Integer.parseInt(parts[3]);e=Integer.parseInt(parts[4]);}}catch(Exception ignored){}showDetail(title);play(title,s,e,false);}
+    private void continueOptions(CatalogClient.Title title){new AlertDialog.Builder(this).setTitle(title.title).setItems(new String[]{title.nextEpisode?"Play next episode":"Resume","View details","Remove from Continue Watching"},(dialog,index)->{if(index==0)resumeContinue(title);else if(index==1)showDetail(title);else{library.dismiss(title,accountScope());renderAccountRows();Toast.makeText(this,"Removed from Continue Watching on this TV",Toast.LENGTH_SHORT).show();}}).setNegativeButton("Cancel",null).show();}
     private void readAccount(boolean accountScreen){
         int token=generation;if(accountClient==null)accountClient=new AccountClient(this,root);
         if(accountScreen){loadingTitle.setText("Your Movy account");busy(true,"Connecting securely…");}
@@ -342,7 +466,7 @@ public class NativeActivity extends android.app.Activity {
         accountClient.request(action,args,(snapshot,error)->{if(token!=generation)return;busy(false,"");if(error!=null){new AlertDialog.Builder(this).setTitle("Movy account").setMessage(error.getMessage()).setPositiveButton("OK",null).show();return;}account=snapshot;renderAccount();});
     }
     private void error(String message,Runnable retry){TextView t=text(message,17);t.setPadding(0,dp(20),0,dp(16));content.addView(t);content.addView(button("Try again",retry),new LinearLayout.LayoutParams(dp(150),dp(46)));}
-    @Override public void onBackPressed(){if(resolver!=null){cancelResolver();return;}if(!screen.equals("home"))showHome();else new AlertDialog.Builder(this).setTitle("Exit Movy?").setPositiveButton("Exit",(d,w)->finish()).setNegativeButton("Keep browsing",null).show();}
+    @Override public void onBackPressed(){if(resolver!=null){cancelResolver();return;}if(sidebarExpanded){setSidebarExpanded(false);if(entryControl!=null)entryControl.requestFocus();return;}if(restoreScreen())return;if(!screen.equals("home"))showHome();else new AlertDialog.Builder(this).setTitle("Exit Movy?").setPositiveButton("Exit",(d,w)->finish()).setNegativeButton("Keep browsing",null).show();}
     private void checkUpdate(){
         updater=new Updater();updater.checkForUpdate(this,new Updater.PromptCallback(){
             @Override public void onUpdateAvailable(String version,String notes,Runnable download){new AlertDialog.Builder(NativeActivity.this).setTitle("Movy "+version+" is ready").setMessage(notes).setPositiveButton("Update",(d,w)->download.run()).setNegativeButton("Later",null).show();}

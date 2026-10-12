@@ -38,17 +38,23 @@ final class CatalogClient {
     static final class Title {
         final long id;
         final long resumeMs;
-        final String title, slug, poster, backdrop, year, rating, description;
+        final long durationMs;
+        final long updatedMs;
+        final boolean nextEpisode;
+        final String title, slug, poster, backdrop, year, rating, description,availableOn;
         Title(JSONObject item) {
             id = item.optLong("id");
             resumeMs = item.optLong("resumeMs");
+            durationMs=item.optLong("durationMs");nextEpisode=item.optBoolean("nextEpisode");
+            updatedMs=item.optLong("updated");
+            availableOn=item.optString("availableOn");
             title = item.optString("title", item.optString("name", "Untitled"));
             slug = item.optString("slug", "/" + item.optString("mediaType", "movie") + "/" + id);
             poster = item.optString("poster", item.optString("image"));
             backdrop = item.optString("image", item.optString("background", poster));
             String date = item.optString("release_date", item.optString("first_air_date", ""));
             year = date.length() >= 4 ? date.substring(0, 4) : "";
-            rating = item.has("rating") ? String.valueOf(item.optDouble("rating")) : "";
+            rating = item.has("rating") ? String.format(java.util.Locale.US,"%.1f",item.optDouble("rating",0)) : "";
             description = item.optString("description", item.optString("overview", ""));
         }
         boolean isSeries() { return slug.startsWith("/tv/"); }
@@ -67,6 +73,27 @@ final class CatalogClient {
     static final class ProviderPage {
         final List<Title> titles;final int page,totalPages;
         ProviderPage(List<Title> titles,int page,int totalPages){this.titles=titles;this.page=page;this.totalPages=totalPages;}
+    }
+    enum Sort {
+        RELEASE_DESC("Release date ↓","primary_release_date.desc","first_air_date.desc"),RELEASE_ASC("Release date ↑","primary_release_date.asc","first_air_date.asc"),
+        TITLE_ASC("Title A–Z","original_title.asc","original_name.asc"),TITLE_DESC("Title Z–A","original_title.desc","original_name.desc"),POPULAR("Popularity","popularity.desc","popularity.desc"),RATING("Highest rated","vote_average.desc","vote_average.desc");
+        final String label,movie,tv;Sort(String label,String movie,String tv){this.label=label;this.movie=movie;this.tv=tv;}
+    }
+    static final class Genre {final int id;final String name;Genre(int id,String name){this.id=id;this.name=name;}}
+    static String libraryUrl(String type,Provider provider,int genre,Sort sort,int page,String today){
+        String date=type.equals("movie")?"primary_release_date":"first_air_date";
+        String filter=provider==null?"":type.equals("movie")?"&with_watch_providers="+provider.watchId+"&watch_region=US":"&with_networks="+provider.network;
+        return "https://db.wecollege.net/3/discover/"+type+"?language=en&include_adult=false&sort_by="+(type.equals("movie")?sort.movie:sort.tv)+"&"+date+".lte="+today+"&"+date+".gte=1880-01-01"+filter+(genre>0?"&with_genres="+genre:"")+(sort==Sort.RATING?"&vote_count.gte=100":"")+"&page="+page;
+    }
+    static void libraryPage(String type,Provider provider,int genre,Sort sort,int page,Result<ProviderPage> callback){
+        IO.execute(()->{try{
+            String today=new java.text.SimpleDateFormat("yyyy-MM-dd",java.util.Locale.US).format(new java.util.Date());JSONObject data=new JSONObject(get(libraryUrl(type,provider,genre,sort,page,today)));JSONArray results=data.getJSONArray("results");
+            List<Title> titles=new ArrayList<>();for(int i=0;i<results.length();i++){JSONObject item=results.optJSONObject(i);if(item!=null)titles.add(fromMetadata(item,type));}
+            ProviderPage result=new ProviderPage(titles,page,data.optInt("total_pages",page+1));MAIN.post(()->callback.accept(result,null));
+        }catch(Exception error){MAIN.post(()->callback.accept(null,error));}});
+    }
+    static void genres(String type,Result<List<Genre>> callback){
+        IO.execute(()->{try{JSONArray data=new JSONObject(get("https://db.wecollege.net/3/genre/"+type+"/list?language=en")).getJSONArray("genres");List<Genre> genres=new ArrayList<>();for(int i=0;i<data.length();i++){JSONObject item=data.getJSONObject(i);genres.add(new Genre(item.getInt("id"),item.getString("name")));}MAIN.post(()->callback.accept(genres,null));}catch(Exception error){MAIN.post(()->callback.accept(null,error));}});
     }
     static String providerUrl(Provider provider,String type,int page,boolean recent,String today){
         String filter=type.equals("movie")?"with_watch_providers="+provider.watchId+"&watch_region=US":"with_networks="+provider.network;
@@ -113,7 +140,8 @@ final class CatalogClient {
             try {
                 JSONArray episodes = new JSONObject(get("https://db.wecollege.net/3/tv/" + id + "/season/" + season + "?language=en")).getJSONArray("episodes");
                 MAIN.post(() -> callback.accept(episodes, null));
-            } catch (Exception e) { MAIN.post(() -> callback.accept(null, e)); }
+            } catch (java.io.FileNotFoundException missing) { MAIN.post(() -> callback.accept(new JSONArray(), null)); }
+            catch (Exception e) { MAIN.post(() -> callback.accept(null, e)); }
         });
     }
     static Title fromMetadata(JSONObject source, String mediaType) throws Exception {

@@ -6,6 +6,33 @@ metadata and resolves a stream only after Play is selected.
 
 ## Current behavior
 
+- A Plex-inspired native TV shell, using the [August 2026 left-navigation
+  preview](https://forums.plex.tv/t/navigation-updates-coming-to-preview-users/941751)
+  as a layout reference: collapsible icon sidebar, expanded library labels,
+  white focus pills, charcoal/gold styling, and artwork-led content. This is
+  branded Movy, not a Plex client; no Plex server, login, assets, or catalogue is used.
+- Separate Movies and Series libraries with Recommended, Library, and Categories
+  entry points. Library defaults to release date descending (series: first premiere),
+  with oldest-first, alphabetical, popularity, and rating sorts; highest-rated
+  results require at least 100 votes. Genre IDs come from Movy's metadata service
+  separately for movies and series. Genre and sort filters also work inside
+  provider-scoped libraries. Future/unknown release dates are excluded.
+- Up to eight previous native screen trees are retained during a session.
+  Returning from details restores loaded pages, scroll offsets, and card focus;
+  interrupted page requests become retryable instead of leaving disabled loaders.
+  This is in-memory navigation restoration, not persistence across process death.
+  New library/provider pages explicitly focus the top, not their Load more controls.
+- Home puts a landscape Continue Watching rail before featured recommendations,
+  combining device-local resumes/up-next with the selected Movy profile's activity.
+  Duplicate series are consolidated, progress and episode labels are shown, and
+  recent rails are capped at 40 items. Overflow/long-press options support resume,
+  title details, and removal from Continue Watching on this TV. Remote dismissals
+  are scoped to username/profile; they do not delete backend history. Local
+  watched-history metadata remains available, and My List is not capped at 40.
+- Completed episodes from either device progress or Movy account history trigger
+  read-only next-episode metadata lookup, including next-season transitions.
+  Queued future episodes stay hidden until their air date; errors can retry on
+  a later Home visit. This validates episode metadata, not stream availability.
 - Artwork-backed home and title pages; readable cards, scores, runtime, age
   ratings, genres, cast, recommendations, and season/episode selection.
 - Search automatically runs after a 650 ms typing pause (two or more characters).
@@ -31,6 +58,9 @@ metadata and resolves a stream only after Play is selected.
   Native progress is not currently written back to the Movy account.
 - Native video playback, resume, next episode, source quality choices, audio
   selection, caption selection, speed, and remote media keys.
+- Remote Back hides controls and shows an exit hint; a second distinct press
+  within 2.5 seconds returns to the title. Held repeats do not count, other remote
+  input resets the guard, and Back during source resolution only cancels that change.
 - The title's loading overlay remains visible until the player opens, avoiding
   a flash back to the selection screen. The player's horizontally scrollable
   toolbar has a separate Sources menu populated from Movy's advertised server
@@ -49,6 +79,13 @@ metadata and resolves a stream only after Play is selected.
   Languages get readable labels. Sources with only
   original audio do not invent extra language choices.
 - Native launcher checks `https://kerv.github.io/movy/version.json` for updates.
+
+Catalogue, genre, discovery, and episode requests use Movy's existing metadata
+service (`db.wecollege.net`); Home uses Movy's server-rendered catalogue. A
+metadata listing does not guarantee a playable stream: resolution remains on
+demand after Play. Home and account-next metadata caches refresh after 15 minutes
+when revisited; library Refresh fetches a fresh first page. No media is resolved
+while browsing. Account playback progress is still not written back by this app.
 
 ## Browser connection boundaries
 
@@ -81,6 +118,7 @@ rclone, or FUSE workflow. The `plex/` experiment is ignored by Git.
 | Purpose | Path |
 | --- | --- |
 | Native browse, account, and loading UI | `app/src/main/java/sx/movy/tv/NativeActivity.java` |
+| Native outline navigation icons | `app/src/main/java/sx/movy/tv/NavigationIcon.java` |
 | Catalogue and provider requests | `app/src/main/java/sx/movy/tv/CatalogClient.java` |
 | Account connection | `app/src/main/java/sx/movy/tv/AccountClient.java` |
 | Account browser adapter | `app/src/main/assets/native_account.js` |
@@ -90,6 +128,8 @@ rclone, or FUSE workflow. The `plex/` experiment is ignored by Git.
 | Native caption lookup fallback | `app/src/main/java/sx/movy/tv/SubtitleLookup.java` |
 | Native Media3 player | `app/src/main/java/sx/movy/tv/PlayerActivity.java` |
 | Local resume and saved titles | `app/src/main/java/sx/movy/tv/PlaybackStore.java` |
+| Confirmed next-episode metadata | `app/src/main/java/sx/movy/tv/NextEpisodeFinder.java` |
+| Remote playback exit safeguard | `app/src/main/java/sx/movy/tv/PlaybackExitGuard.java` |
 | Self-updater | `app/src/main/java/sx/movy/tv/Updater.java` |
 | Release/update manifest | `release/version.json` |
 
@@ -115,6 +155,13 @@ Browser fixtures check requested server selection and the resolver bridge
 and account login, profile scoping/PIN denial, list/resume normalization, logout,
 and credential isolation. Fixtures do not prove a real signed-in account works;
 that and TV caption rendering/remote behavior still require device validation.
+
+Additional tests cover retained screen/card/scroll restoration, pending-page
+retry, initial top focus, sidebar expansion, library query filters, account/local
+Continue Watching consolidation, dismissal scope/history retention, completion,
+confirmed/deferred next episodes, bounded recent rails, and distinct Back presses.
+Native-rendered layout previews are generated in `app/build/reports/native-preview/`.
+They use fixture titles and placeholder artwork, not live catalogue screenshots.
 
 Live browser checks have verified movie/episode HLS playlists and caption files
 with the site's headers. Do not equate a valid playlist with proof of hardware

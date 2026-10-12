@@ -1,6 +1,6 @@
 {
-  "versionCode": 17,
-  "versionName": "1.16",
+  "versionCode": 18,
+  "versionName": "1.17",
   "apkUrl": "https://kerv.github.io/movy/movy.apk",
-  "notes": "Branded provider tiles with service logos and smooth focus animation. Provider browsing now grows downward in poster grids: independent Load more movies and Load more series buttons, jump links, separate pagination/retry/end states, and no replacement of existing cards. Offscreen poster bitmaps are released for longer browsing sessions. The loading screen stays visible until the native player opens. A new Sources menu selects Movy's advertised playback servers or refreshes the current source while preserving position and play/pause state; cancellation or resolution failure keeps the previous stream. Quality choices remain separate. Native captions, accounts, recent-release views, and update checking remain enabled."
+  "notes": "Plex-inspired native browsing: collapsible left sidebar, Home, Movies, Series, Categories, provider libraries, My List, and Account. Movie and series libraries default to release date descending, with date, alphabetical, popularity, rating, and genre controls. Back from details restores loaded pages, scroll, and card focus within the current session. New provider/library pages start at the top. Home has landscape Continue Watching cards combining selected Movy-profile activity and this TV's progress, confirmed next-episode entries, progress bars, removal options, and bounded recent-history rails. Finished series from either source use Movy's episode metadata; future episodes wait until their air date. Removal only hides items on this TV and does not delete Movy history. First remote Back hides player controls; a second press within 2.5 seconds exits, with held repeats ignored. Movy remains the catalogue/account/playback source, not Plex. Native playback progress remains device-local."
 }

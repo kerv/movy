@@ -20,9 +20,11 @@ final class AccountClient {
         final JSONObject profile;
         final JSONArray profiles;
         final List<CatalogClient.Row> rows=new ArrayList<>();
+        final List<CatalogClient.Title> completedSeries=new ArrayList<>(),recentHistory=new ArrayList<>();
         Snapshot(JSONObject data){
             signedIn=data.optBoolean("signedIn");partial=data.optBoolean("partial");username=data.optString("username");email=data.optString("email");profile=data.optJSONObject("profile");profiles=data.optJSONArray("profiles")==null?new JSONArray():data.optJSONArray("profiles");
             JSONArray list=data.optJSONArray("rows");if(list!=null)for(int i=0;i<list.length();i++){JSONObject row=list.optJSONObject(i);if(row==null)continue;JSONArray items=row.optJSONArray("titles");List<CatalogClient.Title> titles=new ArrayList<>();if(items!=null)for(int n=0;n<items.length();n++){JSONObject item=items.optJSONObject(n);if(item!=null&&item.optString("slug").matches("^/(movie|tv)/[0-9]+(?:/[0-9]+/[0-9]+)?$"))titles.add(new CatalogClient.Title(item));}if(!titles.isEmpty())rows.add(new CatalogClient.Row(row.optString("name","Movy"),titles));}
+            for(String key:new String[]{"completedSeries","recentHistory"}){JSONArray items=data.optJSONArray(key);if(items!=null)for(int i=0;i<Math.min(40,items.length());i++){JSONObject item=items.optJSONObject(i);if(item!=null&&item.optString("slug").matches("^/(movie|tv)/[0-9]+(?:/[0-9]+/[0-9]+)?$"))(key.equals("completedSeries")?completedSeries:recentHistory).add(new CatalogClient.Title(item));}}
         }
         CatalogClient.Title resume(CatalogClient.Title title){for(CatalogClient.Row row:rows)for(CatalogClient.Title t:row.titles)if(t.id==title.id&&t.isSeries()==title.isSeries()&&t.resumeMs>0)return t;return title;}
     }

@@ -44,6 +44,9 @@ public class PlayerActivity extends android.app.Activity {
     private FrameLayout sourceLoading;
     private TextView sourceStatus;
     private boolean sourceWasPlaying;
+    private final PlaybackExitGuard exitGuard=new PlaybackExitGuard();
+    private Toast exitHint;
+    private boolean backKeyDown;
     @Override public void onCreate(Bundle state){
         super.onCreate(state);store=new PlaybackStore(this);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
@@ -52,8 +55,8 @@ public class PlayerActivity extends android.app.Activity {
         TextView title=new TextView(this);title.setText(getIntent().getStringExtra("title"));title.setTextColor(Color.WHITE);title.setTextSize(18);toolbar.addView(title,new LinearLayout.LayoutParams(-1,-2));
         controls=new LinearLayout(this);HorizontalScrollView controlScroll=new HorizontalScrollView(this);controlScroll.setHorizontalScrollBarEnabled(false);controlScroll.setSmoothScrollingEnabled(true);controlScroll.addView(controls);toolbar.addView(controlScroll);
         control("Sources",this::sources);control("Audio",()->tracks(C.TRACK_TYPE_AUDIO));control("Subtitles",()->tracks(C.TRACK_TYPE_TEXT));control("Quality",()->tracks(C.TRACK_TYPE_VIDEO));control("Speed",this::speed);
-        String key=getIntent().getStringExtra("key");if(key!=null&&key.startsWith("/tv/"))control("Next episode",this::nextEpisode);
-        control("Back",this::finish);
+        String key=getIntent().getStringExtra("key");if(key!=null){new PlaybackStore(this).started(key);if(key.startsWith("/tv/"))control("Next episode",this::nextEpisode);}
+        control("Back",this::onBackPressed);
         root.addView(toolbar,new FrameLayout.LayoutParams(-1,-2,Gravity.TOP));view.setControllerVisibilityListener((PlayerView.ControllerVisibilityListener)visibility->{toolbar.setVisibility(visibility);view.post(this::enableCaptionButton);});
         Uri stream=getIntent().getData();if(stream==null){finish();return;}
         HashMap<String,String> headers=new HashMap<>();java.io.Serializable value=getIntent().getSerializableExtra("headers");if(value instanceof Map)for(Object entry:((Map<?,?>)value).entrySet()){Map.Entry<?,?> e=(Map.Entry<?,?>)entry;if(e.getKey() instanceof String&&e.getValue() instanceof String)headers.put((String)e.getKey(),(String)e.getValue());}
@@ -64,7 +67,7 @@ public class PlayerActivity extends android.app.Activity {
             if(resolver!=null)return;
             if(!refreshedSource&&(error.errorCode==PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS||error.errorCode==PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE||error.errorCode==PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED)){refreshedSource=true;refreshSource();return;}
             playbackError();
-        }@Override public void onTracksChanged(Tracks tracks){applyPendingSubtitle(tracks);view.post(PlayerActivity.this::enableCaptionButton);}@Override public void onPlaybackStateChanged(int state){view.post(PlayerActivity.this::enableCaptionButton);}});
+        }@Override public void onTracksChanged(Tracks tracks){applyPendingSubtitle(tracks);view.post(PlayerActivity.this::enableCaptionButton);}@Override public void onPlaybackStateChanged(int state){if(state==Player.STATE_ENDED)save();view.post(PlayerActivity.this::enableCaptionButton);}});
         long position=state!=null?state.getLong("position"):getIntent().getLongExtra("position",0);if(position>0)player.seekTo(position);
         prepare(stream,headers,position);view.requestFocus();timer.postDelayed(checkpoint,10000);
         if(available.subtitles.isEmpty())discoverCaptions(false);else captionLookupFinished=true;
@@ -113,7 +116,7 @@ public class PlayerActivity extends android.app.Activity {
         });
     }
     private void cancelSource(boolean restorePlayback){if(resolver!=null){resolver.close();resolver=null;}if(sourceLoading!=null)sourceLoading.setVisibility(View.GONE);if(restorePlayback&&player!=null&&sourceWasPlaying)player.play();if(restorePlayback)view.requestFocus();}
-    @Override public void onBackPressed(){if(resolver!=null){cancelSource(true);return;}super.onBackPressed();}
+    @Override public void onBackPressed(){if(resolver!=null){exitGuard.reset();cancelSource(true);return;}if(exitGuard.press(android.os.SystemClock.uptimeMillis())){if(exitHint!=null)exitHint.cancel();finish();return;}if(view!=null){view.hideController();view.requestFocus();}if(toolbar!=null)toolbar.setVisibility(View.GONE);exitHint=Toast.makeText(this,"Press Back again to return to the title",Toast.LENGTH_SHORT);exitHint.show();}
     private void playbackError(){new AlertDialog.Builder(this).setTitle("Playback interrupted").setMessage("This source could not play. Request a fresh stream or return to the title.").setPositiveButton("Return to title",(d,w)->finish()).setNegativeButton("Refresh source",(d,w)->refreshSource()).show();}
     private void tracks(int type){
         if(type==C.TRACK_TYPE_TEXT&&available.subtitles.size()!=attachedCaptionCount){boolean playing=player.getPlayWhenReady();prepare(Uri.parse(currentUrl),requestHeaders,player.getCurrentPosition());if(!playing)player.pause();}
@@ -151,10 +154,16 @@ public class PlayerActivity extends android.app.Activity {
             if(open)tracks(C.TRACK_TYPE_TEXT);
         });
     }
-    private void save(){if(player==null)return;String key=getIntent().getStringExtra("key");if(key!=null)store.progress(key,getIntent().getStringExtra("title"),getIntent().getStringExtra("poster"),player.getCurrentPosition(),player.getDuration());}
-    @Override public boolean dispatchKeyEvent(KeyEvent event){if(player==null)return super.dispatchKeyEvent(event);int key=event.getKeyCode();if(key==KeyEvent.KEYCODE_CAPTIONS){if(resolver==null&&event.getAction()==KeyEvent.ACTION_DOWN&&event.getRepeatCount()==0)tracks(C.TRACK_TYPE_TEXT);return true;}boolean media=key==KeyEvent.KEYCODE_MEDIA_PLAY||key==KeyEvent.KEYCODE_MEDIA_PAUSE||key==KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE||key==KeyEvent.KEYCODE_MEDIA_FAST_FORWARD||key==KeyEvent.KEYCODE_MEDIA_REWIND;if(!media)return super.dispatchKeyEvent(event);if(resolver!=null)return true;if(event.getAction()==KeyEvent.ACTION_DOWN){switch(key){case KeyEvent.KEYCODE_MEDIA_PLAY:player.play();break;case KeyEvent.KEYCODE_MEDIA_PAUSE:player.pause();break;case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:if(player.isPlaying())player.pause();else player.play();break;case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:player.seekTo(player.getCurrentPosition()+10000);break;case KeyEvent.KEYCODE_MEDIA_REWIND:player.seekTo(Math.max(0,player.getCurrentPosition()-10000));break;}}return true;}
+    private void save(){if(player==null)return;String key=getIntent().getStringExtra("key");if(key!=null){boolean completed=store.progress(key,getIntent().getStringExtra("title"),getIntent().getStringExtra("poster"),player.getCurrentPosition(),player.getDuration());if(completed&&key.startsWith("/tv/"))try{CatalogClient.Title title=new CatalogClient.Title(new org.json.JSONObject().put("id",Long.parseLong(key.split("/")[2])).put("slug",key).put("title",getIntent().getStringExtra("title")).put("poster",getIntent().getStringExtra("poster")));NextEpisodeFinder.find(title,(next,error)->{if(error==null)store.queueNext(title,next);});}catch(Exception ignored){}}}
+    @Override public boolean dispatchKeyEvent(KeyEvent event){
+        int key=event.getKeyCode();if(key==KeyEvent.KEYCODE_BACK){if(event.getAction()==KeyEvent.ACTION_DOWN&&event.getRepeatCount()==0&&!backKeyDown){backKeyDown=true;onBackPressed();}else if(event.getAction()==KeyEvent.ACTION_UP)backKeyDown=false;return true;}
+        if(event.getAction()==KeyEvent.ACTION_DOWN)exitGuard.reset();if(player==null)return super.dispatchKeyEvent(event);
+        if(key==KeyEvent.KEYCODE_CAPTIONS){if(resolver==null&&event.getAction()==KeyEvent.ACTION_DOWN&&event.getRepeatCount()==0)tracks(C.TRACK_TYPE_TEXT);return true;}
+        boolean media=key==KeyEvent.KEYCODE_MEDIA_PLAY||key==KeyEvent.KEYCODE_MEDIA_PAUSE||key==KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE||key==KeyEvent.KEYCODE_MEDIA_FAST_FORWARD||key==KeyEvent.KEYCODE_MEDIA_REWIND;
+        if(!media)return super.dispatchKeyEvent(event);if(resolver!=null)return true;if(event.getAction()==KeyEvent.ACTION_DOWN){switch(key){case KeyEvent.KEYCODE_MEDIA_PLAY:player.play();break;case KeyEvent.KEYCODE_MEDIA_PAUSE:player.pause();break;case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:if(player.isPlaying())player.pause();else player.play();break;case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:player.seekTo(player.getCurrentPosition()+10000);break;case KeyEvent.KEYCODE_MEDIA_REWIND:player.seekTo(Math.max(0,player.getCurrentPosition()-10000));break;}}return true;
+    }
     @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);if(player!=null)state.putLong("position",player.getCurrentPosition());}
-    @Override protected void onStop(){super.onStop();if(captionLookupDialog!=null){captionLookupDialog.dismiss();captionLookupDialog=null;}save();if(player!=null){resumePlayback=resolver!=null?sourceWasPlaying:player.getPlayWhenReady();cancelSource(false);player.pause();}}
+    @Override protected void onStop(){super.onStop();exitGuard.reset();backKeyDown=false;if(exitHint!=null)exitHint.cancel();if(captionLookupDialog!=null){captionLookupDialog.dismiss();captionLookupDialog=null;}save();if(player!=null){resumePlayback=resolver!=null?sourceWasPlaying:player.getPlayWhenReady();cancelSource(false);player.pause();}}
     @Override protected void onStart(){super.onStart();if(player!=null&&resumePlayback)player.play();}
     @Override protected void onDestroy(){timer.removeCallbacksAndMessages(null);save();if(player!=null){view.setPlayer(null);player.release();player=null;}super.onDestroy();}
 }
