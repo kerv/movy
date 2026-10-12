@@ -14,6 +14,17 @@ import static org.junit.Assert.*;
 @Config(sdk=28)
 @androidx.annotation.OptIn(markerClass=androidx.media3.common.util.UnstableApi.class)
 public class PlaybackTracksTest {
+    @Test public void timingAdjustmentKeepsPositionPauseSpeedAndCaptionSelection()throws Exception{
+        PlayerActivity activity=org.robolectric.Robolectric.buildActivity(PlayerActivity.class).get();androidx.media3.exoplayer.ExoPlayer player=new androidx.media3.exoplayer.ExoPlayer.Builder(activity).build();
+        try{
+            java.util.Map<String,Object> fields=new java.util.HashMap<>();fields.put("player",player);fields.put("view",new androidx.media3.ui.PlayerView(activity));fields.put("available",new PlaybackTracks("{}"));fields.put("currentUrl","https://media.example/video.m3u8");fields.put("requestHeaders",new java.util.HashMap<String,String>());
+            for(java.util.Map.Entry<String,Object> entry:fields.entrySet()){java.lang.reflect.Field f=PlayerActivity.class.getDeclaredField(entry.getKey());f.setAccessible(true);f.set(activity,entry.getValue());}
+            player.seekTo(91234);player.pause();player.setPlaybackSpeed(1.25f);player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon().setPreferredTextLanguage("en").setTrackTypeDisabled(C.TRACK_TYPE_TEXT,false).build());
+            java.lang.reflect.Method sync=PlayerActivity.class.getDeclaredMethod("sync",boolean.class);sync.setAccessible(true);sync.invoke(activity,true);android.app.AlertDialog dialog=org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog();
+            android.widget.Button plus=findButton(dialog.getWindow().getDecorView(),"+ 0.10 s");assertNotNull(plus);plus.performClick();java.lang.reflect.Field f=PlayerActivity.class.getDeclaredField("timing");f.setAccessible(true);assertEquals(100,((PlaybackTiming)f.get(activity)).subtitleMs());assertFalse(player.getPlayWhenReady());assertEquals(91234,player.getCurrentPosition());assertEquals(1.25f,player.getPlaybackParameters().speed,0f);assertEquals("en",player.getTrackSelectionParameters().preferredTextLanguages.get(0));findButton(dialog.getWindow().getDecorView(),"Reset").performClick();assertEquals(0,((PlaybackTiming)f.get(activity)).subtitleMs());dialog.dismiss();
+        }finally{player.release();}
+    }
+    private android.widget.Button findButton(android.view.View view,String label){if(view instanceof android.widget.Button&&((android.widget.Button)view).getText().toString().equals(label))return (android.widget.Button)view;if(view instanceof android.view.ViewGroup){android.view.ViewGroup group=(android.view.ViewGroup)view;for(int i=0;i<group.getChildCount();i++){android.widget.Button found=findButton(group.getChildAt(i),label);if(found!=null)return found;}}return null;}
     @Test public void nativeSourcesMenuIncludesServersAndRefresh() throws Exception {
         PlayerActivity activity=org.robolectric.Robolectric.buildActivity(PlayerActivity.class).get();
         java.lang.reflect.Field field=PlayerActivity.class.getDeclaredField("available");field.setAccessible(true);field.set(activity,new PlaybackTracks("{\"server\":\"Miami\",\"servers\":[{\"name\":\"Miami\"},{\"name\":\"Boise\"}]}"));

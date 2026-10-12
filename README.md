@@ -12,7 +12,8 @@ metadata and resolves a stream only after Play is selected.
   white focus pills, charcoal/gold styling, and artwork-led content. This is
   branded Movy, not a Plex client; no Plex server, login, assets, or catalogue is used.
 - Separate Movies and Series libraries with Recommended, Library, and Categories
-  entry points. Library defaults to release date descending (series: first premiere),
+  entry points. Movies/Series open on Recommended, using Movy's featured/popular
+  collections (not personalized predictions). Library defaults to release date descending (series: first premiere),
   with oldest-first, alphabetical, popularity, and rating sorts; highest-rated
   results require at least 100 votes. Genre IDs come from Movy's metadata service
   separately for movies and series. Genre and sort filters also work inside
@@ -52,7 +53,8 @@ metadata and resolves a stream only after Play is selected.
   Recent sorts original movie releases and first series premieres newest first,
   excluding future/unknown dates; it does not mean newly added or new episodes.
   Movie availability uses the US region; series use Movy's network filters.
-- Subtle focus scaling, screen fades, smooth scrolling, and a centered
+- Subtle focus scaling, eased sidebar expansion, page fade/slide transitions,
+  smooth scrolling, and a centered
   artwork-backed loading screen with source status and Cancel.
 - Native Movy sign-in, sign-out, profile selection/PIN verification, account
   watchlists, and account Continue Watching. Login uses Movy's existing backend;
@@ -60,20 +62,31 @@ metadata and resolves a stream only after Play is selected.
   the native interface. Existing sessions at `https://www.movy.sx` are reused.
 - Device-local My List and playback progress remain available separately.
   Native progress is not currently written back to the Movy account.
-- Native video playback, resume, next episode, source quality choices, audio
-  selection, caption selection, speed, and remote media keys.
+- Compact Plex-inspired native playback controls: title and gold timeline above
+  rewind/play/forward, elapsed/total time, CC, and one Settings button. No crowded
+  top toolbar. Settings contains sources, audio, captions, quality, speed, timing,
+  and next episode; remote media keys and 10-second seek increments still work.
+- Audio sync supports ±2 seconds; caption sync supports ±10 seconds, in 0.10-second
+  steps with Reset. Positive means later; negative means earlier. Audio remains
+  the master clock: video presentation shifts relative to audio, and text follows
+  the picture plus its own correction. Media timestamps and source headers are
+  unchanged. Adjustments reprepare at the current position to flush old decoded
+  cues/frames (brief rebuffering is expected), preserving pause, speed, and track
+  preferences. Offsets survive source/quality changes and activity recreation,
+  but reset for each new playback session. This is not a device-wide calibration.
+  Renderer scheduling is tested; real hardware lip-sync still requires TV testing.
 - Remote Back hides controls and shows an exit hint; a second distinct press
   within 2.5 seconds returns to the title. Held repeats do not count, other remote
   input resets the guard, and Back during source resolution only cancels that change.
 - The title's loading overlay remains visible until the player opens, avoiding
-  a flash back to the selection screen. The player's horizontally scrollable
-  toolbar has a separate Sources menu populated from Movy's advertised server
+  a flash back to the selection screen. The player's Settings includes a
+  separate Sources menu populated from Movy's advertised server
   buttons, plus Refresh current source. Server selection resolves on demand and
   preserves position and play/pause state; cancellation or resolution failure
   keeps the previous stream. Servers may offer different audio/release editions;
   selecting one is not a guarantee of better performance. Quality remains separate.
 - External VTT/SRT subtitle files advertised by Movy are merged with HLS using
-  Media3's `DefaultMediaSourceFactory`; both CC and the toolbar subtitle menu
+  Media3's `DefaultMediaSourceFactory`; both CC and the Settings subtitle menu
   expose the available tracks. If browser metadata is missing, native playback
   searches Movy's `subtitles.vidy.st` service with the exact title/episode ID.
   CC stays clickable during lookup, failures can be retried, and `/download`
@@ -131,6 +144,8 @@ rclone, or FUSE workflow. The `plex/` experiment is ignored by Git.
 | Caption/source metadata | `app/src/main/java/sx/movy/tv/PlaybackTracks.java` |
 | Native caption lookup fallback | `app/src/main/java/sx/movy/tv/SubtitleLookup.java` |
 | Native Media3 player | `app/src/main/java/sx/movy/tv/PlayerActivity.java` |
+| Relative audio/caption presentation timing | `app/src/main/java/sx/movy/tv/PlaybackTiming.java` |
+| Compact native playback controls | `app/src/main/res/layout/native_player_controls.xml` |
 | Local resume and saved titles | `app/src/main/java/sx/movy/tv/PlaybackStore.java` |
 | Confirmed next-episode metadata | `app/src/main/java/sx/movy/tv/NextEpisodeFinder.java` |
 | Remote playback exit safeguard | `app/src/main/java/sx/movy/tv/PlaybackExitGuard.java` |

@@ -14,7 +14,8 @@ import androidx.media3.common.*;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
-import androidx.media3.exoplayer.hls.HlsMediaSource;
+import androidx.media3.exoplayer.DefaultRenderersFactory;
+import androidx.media3.exoplayer.Renderer;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.ui.PlayerView;
 import java.util.*;
@@ -24,8 +25,7 @@ import java.util.*;
 public class PlayerActivity extends android.app.Activity {
     private ExoPlayer player;
     private PlayerView view;
-    private LinearLayout toolbar;
-    private LinearLayout controls;
+    private final PlaybackTiming timing=new PlaybackTiming();
     private PlaybackStore store;
     private final Handler timer=new Handler();
     private final Runnable checkpoint=new Runnable(){@Override public void run(){save();timer.postDelayed(this,10000);}};
@@ -50,18 +50,16 @@ public class PlayerActivity extends android.app.Activity {
     @Override public void onCreate(Bundle state){
         super.onCreate(state);store=new PlaybackStore(this);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
-        root=new FrameLayout(this);root.setBackgroundColor(Color.BLACK);view=new PlayerView(this);view.setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING);view.setShowSubtitleButton(true);view.setControllerShowTimeoutMs(5000);root.addView(view);setContentView(root);
-        toolbar=new LinearLayout(this);toolbar.setOrientation(LinearLayout.VERTICAL);toolbar.setPadding(28,14,28,14);toolbar.setBackgroundColor(0xcb090d16);
-        TextView title=new TextView(this);title.setText(getIntent().getStringExtra("title"));title.setTextColor(Color.WHITE);title.setTextSize(18);toolbar.addView(title,new LinearLayout.LayoutParams(-1,-2));
-        controls=new LinearLayout(this);HorizontalScrollView controlScroll=new HorizontalScrollView(this);controlScroll.setHorizontalScrollBarEnabled(false);controlScroll.setSmoothScrollingEnabled(true);controlScroll.addView(controls);toolbar.addView(controlScroll);
-        control("Sources",this::sources);control("Audio",()->tracks(C.TRACK_TYPE_AUDIO));control("Subtitles",()->tracks(C.TRACK_TYPE_TEXT));control("Quality",()->tracks(C.TRACK_TYPE_VIDEO));control("Speed",this::speed);
-        String key=getIntent().getStringExtra("key");if(key!=null){new PlaybackStore(this).started(key);if(key.startsWith("/tv/"))control("Next episode",this::nextEpisode);}
-        control("Back",this::onBackPressed);
-        root.addView(toolbar,new FrameLayout.LayoutParams(-1,-2,Gravity.TOP));view.setControllerVisibilityListener((PlayerView.ControllerVisibilityListener)visibility->{toolbar.setVisibility(visibility);view.post(this::enableCaptionButton);});
+        root=new FrameLayout(this);root.setBackgroundColor(Color.BLACK);view=(PlayerView)getLayoutInflater().inflate(R.layout.native_player,root,false);view.setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING);view.setShowSubtitleButton(true);view.setControllerShowTimeoutMs(5000);root.addView(view);setContentView(root);
+        ((TextView)view.findViewById(R.id.player_title)).setText(getIntent().getStringExtra("title"));view.findViewById(R.id.player_options).setOnClickListener(v->settings());
+        String key=getIntent().getStringExtra("key");if(key!=null)store.started(key);
+        timing.setAudioMs(state==null?0:state.getInt("audioOffset"));timing.setSubtitleMs(state==null?0:state.getInt("subtitleOffset"));
+        view.setControllerVisibilityListener((PlayerView.ControllerVisibilityListener)visibility->{if(visibility==View.VISIBLE){View bar=view.findViewById(androidx.media3.ui.R.id.exo_bottom_bar);bar.setAlpha(0);bar.setTranslationY(10);bar.animate().alpha(1).translationY(0).setDuration(220).start();}view.post(this::enableCaptionButton);});
         Uri stream=getIntent().getData();if(stream==null){finish();return;}
         HashMap<String,String> headers=new HashMap<>();java.io.Serializable value=getIntent().getSerializableExtra("headers");if(value instanceof Map)for(Object entry:((Map<?,?>)value).entrySet()){Map.Entry<?,?> e=(Map.Entry<?,?>)entry;if(e.getKey() instanceof String&&e.getValue() instanceof String)headers.put((String)e.getKey(),(String)e.getValue());}
         available=new PlaybackTracks(getIntent().getStringExtra("tracks"));
-        player=new ExoPlayer.Builder(this).build();view.setPlayer(player);
+        DefaultRenderersFactory factory=new DefaultRenderersFactory(this);
+        player=new ExoPlayer.Builder(this,(handler,video,audio,text,metadata)->{Renderer[] renderers=factory.createRenderers(handler,video,audio,text,metadata);for(int i=0;i<renderers.length;i++)renderers[i]=timing.wrap(renderers[i]);return renderers;}).setSeekBackIncrementMs(10000).setSeekForwardIncrementMs(10000).build();view.setPlayer(player);
         captionButton=view.findViewById(androidx.media3.ui.R.id.exo_subtitle);enableCaptionButton();
         player.addListener(new Player.Listener(){@Override public void onPlayerError(PlaybackException error){
             if(resolver!=null)return;
@@ -72,7 +70,25 @@ public class PlayerActivity extends android.app.Activity {
         prepare(stream,headers,position);view.requestFocus();timer.postDelayed(checkpoint,10000);
         if(available.subtitles.isEmpty())discoverCaptions(false);else captionLookupFinished=true;
     }
-    private void control(String name,Runnable click){Button b=new Button(this);b.setText(name);b.setAllCaps(false);b.setTextColor(Color.WHITE);b.setTextSize(12);b.setOnClickListener(v->click.run());controls.addView(b,new LinearLayout.LayoutParams(-2,-2));}
+    private void settings(){
+        List<String> labels=new ArrayList<>(Arrays.asList("Playback source","Audio language","Subtitles / closed captions","Quality","Playback speed","Audio sync · "+offset(timing.audioMs()),"Subtitle sync · "+offset(timing.subtitleMs())));
+        String key=getIntent().getStringExtra("key");if(key!=null&&key.startsWith("/tv/"))labels.add("Next episode");
+        new AlertDialog.Builder(this).setTitle("Playback settings").setItems(labels.toArray(new String[0]),(d,w)->{switch(w){case 0:sources();break;case 1:tracks(C.TRACK_TYPE_AUDIO);break;case 2:tracks(C.TRACK_TYPE_TEXT);break;case 3:tracks(C.TRACK_TYPE_VIDEO);break;case 4:speed();break;case 5:sync(false);break;case 6:sync(true);break;case 7:nextEpisode();break;}}).setNegativeButton("Close",null).show();
+    }
+    private static String offset(int value){return String.format(java.util.Locale.US,"%+.2f s",value/1000f);}
+    private void sync(boolean subtitles){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(32,16,32,16);
+        TextView value=new TextView(this);value.setTextColor(Color.WHITE);value.setTextSize(22);value.setGravity(Gravity.CENTER);box.addView(value);
+        TextView help=new TextView(this);help.setText("− plays earlier · + plays later\n"+(subtitles?"Range: −10 to +10 seconds":"Range: −2 to +2 seconds")+". Applies to this playback only.");help.setTextColor(0xffaab0b6);help.setGravity(Gravity.CENTER);help.setPadding(0,12,0,16);box.addView(help);
+        Runnable update=()->value.setText(offset(subtitles?timing.subtitleMs():timing.audioMs()));update.run();
+        LinearLayout buttons=new LinearLayout(this);buttons.setGravity(Gravity.CENTER);box.addView(buttons);
+        int[] steps={-100,0,100};String[] names={"− 0.10 s","Reset","+ 0.10 s"};
+        for(int i=0;i<steps.length;i++){final int step=steps[i];Button b=new Button(this);b.setAllCaps(false);b.setText(names[i]);buttons.addView(b);b.setOnClickListener(v->{int next=step==0?0:(subtitles?timing.subtitleMs():timing.audioMs())+step;if(subtitles)timing.setSubtitleMs(next);else timing.setAudioMs(next);update.run();
+            // Rebuild at the same position to flush previously decoded cues/frames,
+            // including backwards adjustments. Preserve pause, speed and selection.
+            boolean playing=player.getPlayWhenReady();prepare(Uri.parse(currentUrl),requestHeaders,player.getCurrentPosition());if(!playing)player.pause();});}
+        new AlertDialog.Builder(this).setTitle(subtitles?"Subtitle timing":"Audio timing").setView(box).setPositiveButton("Done",null).show();
+    }
     private void speed(){String[] labels={"0.75×","Normal","1.25×","1.5×","2×"};float[] rates={.75f,1f,1.25f,1.5f,2f};new AlertDialog.Builder(this).setTitle("Playback speed").setItems(labels,(d,w)->player.setPlaybackSpeed(rates[w])).show();}
     private void nextEpisode(){String[] parts=getIntent().getStringExtra("key").split("/");try{int s=Integer.parseInt(parts[3]),e=Integer.parseInt(parts[4]);setResult(RESULT_OK,new android.content.Intent().putExtra("season",s).putExtra("episode",e+1));finish();}catch(Exception ignored){}}
     private void prepare(Uri stream,HashMap<String,String> headers,long position){
@@ -116,11 +132,11 @@ public class PlayerActivity extends android.app.Activity {
         });
     }
     private void cancelSource(boolean restorePlayback){if(resolver!=null){resolver.close();resolver=null;}if(sourceLoading!=null)sourceLoading.setVisibility(View.GONE);if(restorePlayback&&player!=null&&sourceWasPlaying)player.play();if(restorePlayback)view.requestFocus();}
-    @Override public void onBackPressed(){if(resolver!=null){exitGuard.reset();cancelSource(true);return;}if(exitGuard.press(android.os.SystemClock.uptimeMillis())){if(exitHint!=null)exitHint.cancel();finish();return;}if(view!=null){view.hideController();view.requestFocus();}if(toolbar!=null)toolbar.setVisibility(View.GONE);exitHint=Toast.makeText(this,"Press Back again to return to the title",Toast.LENGTH_SHORT);exitHint.show();}
+    @Override public void onBackPressed(){if(resolver!=null){exitGuard.reset();cancelSource(true);return;}if(exitGuard.press(android.os.SystemClock.uptimeMillis())){if(exitHint!=null)exitHint.cancel();finish();return;}if(view!=null){view.hideController();view.requestFocus();}exitHint=Toast.makeText(this,"Press Back again to return to the title",Toast.LENGTH_SHORT);exitHint.show();}
     private void playbackError(){new AlertDialog.Builder(this).setTitle("Playback interrupted").setMessage("This source could not play. Request a fresh stream or return to the title.").setPositiveButton("Return to title",(d,w)->finish()).setNegativeButton("Refresh source",(d,w)->refreshSource()).show();}
     private void tracks(int type){
         if(type==C.TRACK_TYPE_TEXT&&available.subtitles.size()!=attachedCaptionCount){boolean playing=player.getPlayWhenReady();prepare(Uri.parse(currentUrl),requestHeaders,player.getCurrentPosition());if(!playing)player.pause();}
-        if(type==C.TRACK_TYPE_VIDEO&&available.sources.size()>1){List<String> names=new ArrayList<>();for(PlaybackTracks.Source source:available.sources)names.add((source.url.equals(currentUrl)?"✓ ":"")+source.label);new AlertDialog.Builder(this).setTitle("Quality").setItems(names.toArray(new String[0]),(d,w)->{PlaybackTracks.Source source=available.sources.get(w);prepare(Uri.parse(source.url),requestHeaders,player.getCurrentPosition());}).show();return;}
+        if(type==C.TRACK_TYPE_VIDEO&&available.sources.size()>1){List<String> names=new ArrayList<>();for(PlaybackTracks.Source source:available.sources)names.add((source.url.equals(currentUrl)?"✓ ":"")+source.label);new AlertDialog.Builder(this).setTitle("Quality").setItems(names.toArray(new String[0]),(d,w)->{boolean playing=player.getPlayWhenReady();PlaybackTracks.Source source=available.sources.get(w);prepare(Uri.parse(source.url),requestHeaders,player.getCurrentPosition());if(!playing)player.pause();}).show();return;}
         List<String> labels=new ArrayList<>();List<TrackSelectionOverride> options=new ArrayList<>();labels.add(type==C.TRACK_TYPE_TEXT?"Off":"Auto");options.add(null);
         for(Tracks.Group group:player.getCurrentTracks().getGroups())if(group.getType()==type)for(int i=0;i<group.length;i++){if(!group.isTrackSupported(i))continue;Format f=group.getTrackFormat(i);String label=type==C.TRACK_TYPE_VIDEO?(f.height>0?f.height+"p":"Video"):PlaybackTracks.languageLabel(f.label,f.language,type==C.TRACK_TYPE_AUDIO?"Original audio (default)":"Subtitles "+(i+1));labels.add((group.isTrackSelected(i)?"✓ ":"")+label);options.add(new TrackSelectionOverride(group.getMediaTrackGroup(),i));}
         if(options.size()==1){
@@ -162,7 +178,7 @@ public class PlayerActivity extends android.app.Activity {
         boolean media=key==KeyEvent.KEYCODE_MEDIA_PLAY||key==KeyEvent.KEYCODE_MEDIA_PAUSE||key==KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE||key==KeyEvent.KEYCODE_MEDIA_FAST_FORWARD||key==KeyEvent.KEYCODE_MEDIA_REWIND;
         if(!media)return super.dispatchKeyEvent(event);if(resolver!=null)return true;if(event.getAction()==KeyEvent.ACTION_DOWN){switch(key){case KeyEvent.KEYCODE_MEDIA_PLAY:player.play();break;case KeyEvent.KEYCODE_MEDIA_PAUSE:player.pause();break;case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:if(player.isPlaying())player.pause();else player.play();break;case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:player.seekTo(player.getCurrentPosition()+10000);break;case KeyEvent.KEYCODE_MEDIA_REWIND:player.seekTo(Math.max(0,player.getCurrentPosition()-10000));break;}}return true;
     }
-    @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);if(player!=null)state.putLong("position",player.getCurrentPosition());}
+    @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);if(player!=null)state.putLong("position",player.getCurrentPosition());state.putInt("audioOffset",timing.audioMs());state.putInt("subtitleOffset",timing.subtitleMs());}
     @Override protected void onStop(){super.onStop();exitGuard.reset();backKeyDown=false;if(exitHint!=null)exitHint.cancel();if(captionLookupDialog!=null){captionLookupDialog.dismiss();captionLookupDialog=null;}save();if(player!=null){resumePlayback=resolver!=null?sourceWasPlaying:player.getPlayWhenReady();cancelSource(false);player.pause();}}
     @Override protected void onStart(){super.onStart();if(player!=null&&resumePlayback)player.play();}
     @Override protected void onDestroy(){timer.removeCallbacksAndMessages(null);save();if(player!=null){view.setPlayer(null);player.release();player=null;}super.onDestroy();}

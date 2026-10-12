@@ -1,0 +1,40 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="match_parent">
+    <LinearLayout android:id="@id/exo_bottom_bar" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:layout_gravity="bottom"
+        android:orientation="vertical" android:paddingHorizontal="32dp" android:paddingTop="48dp"
+        android:paddingBottom="20dp" android:background="@drawable/player_controls_background">
+        <TextView android:id="@+id/player_title" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:textColor="#FFFFFF" android:textSize="22sp"
+            android:maxLines="2" android:ellipsize="end" android:layout_marginBottom="12dp" />
+        <androidx.media3.ui.DefaultTimeBar android:id="@id/exo_progress"
+            android:layout_width="match_parent" android:layout_height="32dp" android:focusable="true"
+            app:played_color="#E9AE36" app:scrubber_color="#E9AE36" app:buffered_color="#778088"
+            app:unplayed_color="#445058" app:bar_height="3dp" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="48dp"
+            android:gravity="center_vertical" android:orientation="horizontal">
+            <ImageButton android:id="@id/exo_rew" android:layout_width="48dp" android:layout_height="48dp"
+                android:background="@drawable/player_button" android:src="@drawable/exo_styled_controls_rewind"
+                android:contentDescription="Rewind 10 seconds" android:padding="12dp" />
+            <ImageButton android:id="@id/exo_play_pause" android:layout_width="56dp" android:layout_height="48dp"
+                android:background="@drawable/player_button" android:src="@drawable/exo_styled_controls_play"
+                android:contentDescription="Play or pause" android:padding="10dp" />
+            <ImageButton android:id="@id/exo_ffwd" android:layout_width="48dp" android:layout_height="48dp"
+                android:background="@drawable/player_button" android:src="@drawable/exo_styled_controls_fastforward"
+                android:contentDescription="Forward 10 seconds" android:padding="12dp" />
+            <TextView android:id="@id/exo_position" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:textColor="#FFFFFF" android:paddingStart="16dp" android:textSize="14sp" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text=" / " android:textColor="#AAB0B6" android:textSize="14sp" />
+            <TextView android:id="@id/exo_duration" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:textColor="#AAB0B6" android:textSize="14sp" />
+            <ImageButton android:id="@id/exo_subtitle" android:layout_width="48dp" android:layout_height="48dp"
+                android:background="@drawable/player_button" android:src="@drawable/exo_styled_controls_subtitle_on"
+                android:contentDescription="Closed captions" android:padding="12dp" />
+            <ImageButton android:id="@+id/player_options" android:layout_width="48dp" android:layout_height="48dp"
+                android:background="@drawable/player_button" android:src="@drawable/exo_styled_controls_settings"
+                android:contentDescription="Playback settings" android:padding="12dp" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

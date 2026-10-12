@@ -43,6 +43,7 @@ public class NativeActivity extends android.app.Activity {
     private FrameLayout sidebar;
     private final List<TextView> navigationLabels=new ArrayList<>();
     private boolean sidebarExpanded;
+    private android.animation.ValueAnimator sidebarAnimation;
     private Button entryControl;
     private android.view.ViewTreeObserver.OnGlobalFocusChangeListener navigationFocus;
     private CatalogClient.Provider activeProvider;
@@ -72,6 +73,7 @@ public class NativeActivity extends android.app.Activity {
     private void rememberScreen(){if(content==null)return;history.addLast(new ScreenState());while(history.size()>8)history.removeFirst();releaseArtwork(root);}
     private void releaseArtwork(View view){if(view instanceof ImageView)((ImageView)view).setImageDrawable(null);if(view instanceof android.view.ViewGroup){android.view.ViewGroup group=(android.view.ViewGroup)view;for(int i=0;i<group.getChildCount();i++)releaseArtwork(group.getChildAt(i));}}
     boolean restoreScreen(){
+        if(sidebarAnimation!=null){sidebarAnimation.cancel();sidebarAnimation=null;}
         if(history.isEmpty())return false;cancelResolver();if(searchDebouncer!=null)searchDebouncer.cancel();if(accountClient!=null){accountClient.close();accountClient=null;}generation++;
         ScreenState state=history.removeLast();root.removeAllViews();screen=state.name;filter=state.homeFilter;libraryType=state.type;pendingSearch=state.search;activeProvider=state.provider;librarySort=state.sort;libraryGenre=state.genre;
         content=state.body;results=state.searchResults;episodes=state.episodeRows;accountRows=state.accountContent;loading=state.overlay;loadingText=state.status;loadingTitle=state.title;loadingArt=state.art;mainScroll=state.scroll;sidebar=state.nav;entryControl=state.top;detailTitle=state.detail;detailLoading=state.pendingDetails;season=state.selectedSeason;screenColor=state.color;pageSections=state.sections;
@@ -100,12 +102,13 @@ public class NativeActivity extends android.app.Activity {
     }
     private void addButton(LinearLayout row,String title,Runnable click){Button b=button(title,click);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(44));p.rightMargin=dp(10);row.addView(b,p);}
     private void begin(String name){
+        if(sidebarAnimation!=null){sidebarAnimation.cancel();sidebarAnimation=null;}
         cancelResolver();if(searchDebouncer!=null)searchDebouncer.cancel();if(accountClient!=null){accountClient.close();accountClient=null;}
         if(name.equals("home"))history.clear();else if(!name.equals(screen))rememberScreen();
         accountRows=null;pageSections=new ArrayList<>();activeProvider=null;detailLoading=false;pendingSearch="";screen=name;generation++;root.removeAllViews();screenColor=BG;root.setBackgroundColor(BG);
         mainScroll=new ScrollView(this);mainScroll.setFillViewport(true);mainScroll.setSmoothScrollingEnabled(true);mainScroll.setDescendantFocusability(android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS);
         content=column();content.setPadding(dp(24),dp(18),dp(24),dp(40));mainScroll.addView(content);FrameLayout.LayoutParams mainParams=new FrameLayout.LayoutParams(-1,-1);mainParams.leftMargin=dp(84);root.addView(mainScroll,mainParams);
-        content.setAlpha(0);content.animate().alpha(1).setDuration(180).start();
+        content.setAlpha(0);content.setTranslationY(dp(12));content.animate().alpha(1).translationY(0).setInterpolator(new android.view.animation.DecelerateInterpolator()).setDuration(260).start();
         loading=new FrameLayout(this);loading.setBackgroundColor(BG);
         loadingArt=new ImageView(this);loadingArt.setScaleType(ImageView.ScaleType.CENTER_CROP);loading.addView(loadingArt,new FrameLayout.LayoutParams(-1,-1));
         View shade=new View(this);shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,new int[]{0xd9090d16,0xf0090d16}));loading.addView(shade,new FrameLayout.LayoutParams(-1,-1));
@@ -130,14 +133,21 @@ public class NativeActivity extends android.app.Activity {
         TextView brand=label("M",23);brand.setGravity(Gravity.CENTER);brand.setTextColor(ACCENT);items.addView(brand,new LinearLayout.LayoutParams(-1,dp(40)));
         navItem(items,"Account","account",screen.equals("account"),this::showAccount);navItem(items,"My List","saved",screen.equals("saved"),this::showSaved);navItem(items,"Search","search",screen.equals("search"),this::showSearch);navItem(items,"Home","home",screen.equals("home"),()->{filter="All";showHome();});
         TextView libraries=text("LIBRARIES",11);libraries.setTextColor(MUTED);libraries.setPadding(dp(12),dp(20),0,dp(10));navigationLabels.add(libraries);libraries.setVisibility(View.GONE);items.addView(libraries);
-        navItem(items,"Movies","movies",screen.equals("movies")&&activeProvider==null,()->showLibrary("movie",null,null,CatalogClient.Sort.RELEASE_DESC));navItem(items,"Series","series",screen.equals("series")&&activeProvider==null,()->showLibrary("tv",null,null,CatalogClient.Sort.RELEASE_DESC));navItem(items,"Categories","genres",screen.equals("genres"),()->showGenres("movie"));navItem(items,"Providers","providers",screen.equals("providers"),this::showProviders);
+        navItem(items,"Movies","movies",screen.equals("movies")&&activeProvider==null,()->showRecommended("movie"));navItem(items,"Series","series",screen.equals("series")&&activeProvider==null,()->showRecommended("tv"));navItem(items,"Categories","genres",screen.equals("genres"),()->showGenres("movie"));navItem(items,"Providers","providers",screen.equals("providers"),this::showProviders);
         for(CatalogClient.Provider provider:CatalogClient.PROVIDERS)navItem(items,provider.name,"brand:"+provider.name.charAt(0),activeProvider==provider,()->showProvider(provider));
         FrameLayout.LayoutParams params=new FrameLayout.LayoutParams(dp(68),-1,Gravity.LEFT);root.addView(sidebar,Math.max(0,root.getChildCount()-1),params);
         if(navigationFocus==null){navigationFocus=(oldFocus,newFocus)->setSidebarExpanded(isInside(newFocus,sidebar));root.getViewTreeObserver().addOnGlobalFocusChangeListener(navigationFocus);}
     }
     private boolean isInside(View child,View ancestor){while(child!=null){if(child==ancestor)return true;child=child.getParent() instanceof View?(View)child.getParent():null;}return false;}
     private Object focusTagOf(View view){while(view!=null&&view!=root){if(view.getTag()!=null)return view.getTag();view=view.getParent() instanceof View?(View)view.getParent():null;}return null;}
-    private void setSidebarExpanded(boolean expanded){if(sidebar==null)return;sidebarExpanded=expanded;android.view.ViewGroup.LayoutParams params=sidebar.getLayoutParams();if(params!=null&&params.width!=dp(expanded?228:68)){params.width=dp(expanded?228:68);sidebar.setLayoutParams(params);mainScroll.animate().alpha(expanded?.5f:1f).setDuration(140).start();}for(TextView label:navigationLabels)label.setVisibility(expanded?View.VISIBLE:View.GONE);}
+    private void setSidebarExpanded(boolean expanded){
+        if(sidebar==null)return;int target=dp(expanded?228:68);if(sidebarExpanded==expanded&&sidebarAnimation!=null&&sidebarAnimation.isRunning())return;sidebarExpanded=expanded;
+        android.view.ViewGroup.LayoutParams params=sidebar.getLayoutParams();if(params!=null&&params.width!=target){
+            if(sidebarAnimation!=null)sidebarAnimation.cancel();FrameLayout nav=sidebar;sidebarAnimation=android.animation.ValueAnimator.ofInt(params.width,target);sidebarAnimation.setDuration(220);sidebarAnimation.setInterpolator(new android.view.animation.DecelerateInterpolator());sidebarAnimation.addUpdateListener(a->{android.view.ViewGroup.LayoutParams p=nav.getLayoutParams();p.width=(Integer)a.getAnimatedValue();nav.setLayoutParams(p);});sidebarAnimation.start();
+        }
+        mainScroll.animate().alpha(expanded?.5f:1f).setDuration(220).start();
+        for(TextView label:navigationLabels){label.animate().cancel();label.setVisibility(expanded?View.VISIBLE:View.GONE);if(expanded){label.setAlpha(0);label.animate().alpha(1).setDuration(180).start();}}
+    }
     private void navItem(LinearLayout parent,String name,String icon,boolean selected,Runnable action){
         LinearLayout item=new LinearLayout(this);item.setGravity(Gravity.CENTER_VERTICAL);item.setPadding(dp(12),0,dp(10),0);item.setFocusable(true);item.setClickable(true);item.setTag("nav-"+icon);item.setContentDescription(name);item.setBackground(rounded(selected?0xff30363a:Color.TRANSPARENT,0));
         NavigationIcon glyph=new NavigationIcon(this,icon);item.addView(glyph,new LinearLayout.LayoutParams(dp(24),dp(24)));TextView caption=label(name,14);caption.setPadding(dp(14),0,0,0);caption.setVisibility(View.GONE);navigationLabels.add(caption);item.addView(caption,new LinearLayout.LayoutParams(0,-2,1));LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,dp(44));params.bottomMargin=dp(3);parent.addView(item,params);
@@ -151,7 +161,7 @@ public class NativeActivity extends android.app.Activity {
     }
     private void renderHome(){
         LinearLayout tabs=new LinearLayout(this);tabs.setPadding(0,dp(12),0,dp(14));
-        addButton(tabs,"Movie library",()->showLibrary("movie",null,null,CatalogClient.Sort.RELEASE_DESC));addButton(tabs,"Series library",()->showLibrary("tv",null,null,CatalogClient.Sort.RELEASE_DESC));addButton(tabs,"Categories",()->showGenres("movie"));
+        addButton(tabs,"Movies",()->showRecommended("movie"));addButton(tabs,"Series",()->showRecommended("tv"));addButton(tabs,"Categories",()->showGenres("movie"));
         addButton(tabs,"Refresh",()->{homeRows=null;providersLoaded=false;showHome();});content.addView(tabs);
         LinearLayout providers=new LinearLayout(this);providers.setPadding(dp(6),dp(8),dp(6),dp(20));providers.setClipChildren(false);for(CatalogClient.Provider p:CatalogClient.PROVIDERS)providers.addView(providerTile(p));HorizontalScrollView providerStrip=new HorizontalScrollView(this);providerStrip.setHorizontalScrollBarEnabled(false);providerStrip.setSmoothScrollingEnabled(true);providerStrip.setClipChildren(false);providerStrip.addView(providers);
         List<CatalogClient.Row> rows=new ArrayList<>();for(CatalogClient.Row row:homeRows){List<CatalogClient.Title> titles=new ArrayList<>();for(CatalogClient.Title title:row.titles)if(filter.equals("All")||(filter.equals("Series")==title.isSeries()))titles.add(title);if(!titles.isEmpty())rows.add(new CatalogClient.Row(row.name,titles));}
@@ -248,7 +258,16 @@ public class NativeActivity extends android.app.Activity {
     private void chooseGenre(String type,CatalogClient.Provider provider,CatalogClient.Sort sort){int token=generation;withGenres(type,(genres,error)->{if(token!=generation)return;if(error!=null){Toast.makeText(this,"Categories could not load. Please try again.",Toast.LENGTH_LONG).show();return;}String[] names=new String[genres.size()+1];names[0]="All categories";for(int i=0;i<genres.size();i++)names[i+1]=genres.get(i).name;new AlertDialog.Builder(this).setTitle("Filter by category").setItems(names,(d,index)->showLibrary(type,provider,index==0?null:genres.get(index-1),sort)).setNegativeButton("Cancel",null).show();});}
     private void showRecommended(String type){
         begin(type.equals("movie")?"movies":"series");libraryType=type;header();LinearLayout tabs=new LinearLayout(this);addButton(tabs,"✓ Recommended",()->{});addButton(tabs,"Library",()->showLibrary(type,null,null,CatalogClient.Sort.RELEASE_DESC));addButton(tabs,"Categories",()->showGenres(type));content.addView(tabs);
-        LinearLayout rows=column();content.addView(rows);int token=generation;CatalogClient.Result<List<CatalogClient.Row>> render=(all,error)->{if(token!=generation)return;if(error!=null){rows.addView(button("Retry recommendations",()->showRecommended(type)));return;}LinearLayout main=content;content=rows;boolean featured=false;for(CatalogClient.Row row:all){List<CatalogClient.Title> titles=new ArrayList<>();for(CatalogClient.Title title:row.titles)if(title.isSeries()==type.equals("tv"))titles.add(title);if(!titles.isEmpty()){if(!featured){hero(titles.get(0),null,false);featured=true;}rail(new CatalogClient.Row(row.name,titles));}}content=main;};if(homeRows!=null)render.accept(homeRows,null);else CatalogClient.home(render);
+        TextView note=text("Movy's featured and popular collections · not personalized recommendations",14);note.setTextColor(MUTED);content.addView(note);
+        LinearLayout rows=column();content.addView(rows);int token=generation;
+        boolean cached=homeRows!=null&&System.currentTimeMillis()-homeLoadedAt<15*60*1000L;
+        CatalogClient.Result<List<CatalogClient.Row>> render=(all,error)->{
+            if(token!=generation)return;if(error!=null){rows.addView(button("Retry recommendations",()->showRecommended(type)));return;}
+            homeRows=all;if(!cached)homeLoadedAt=System.currentTimeMillis();LinearLayout main=content;content=rows;boolean featured=false;
+            for(CatalogClient.Row row:all){List<CatalogClient.Title> titles=new ArrayList<>();for(CatalogClient.Title title:row.titles)if(title.isSeries()==type.equals("tv"))titles.add(title);if(!titles.isEmpty()){if(!featured){hero(titles.get(0),null,false);featured=true;}rail(new CatalogClient.Row(row.name,titles));}}
+            content=main;
+        };
+        if(cached)render.accept(homeRows,null);else CatalogClient.home(render);
     }
     private void showGenres(String type){showGenres(type,null);}
     private void showGenres(String type,CatalogClient.Provider provider){
@@ -491,5 +510,5 @@ public class NativeActivity extends android.app.Activity {
             });
         }
     }
-    @Override protected void onDestroy(){cancelResolver();if(searchDebouncer!=null)searchDebouncer.cancel();if(accountClient!=null)accountClient.close();super.onDestroy();}
+    @Override protected void onDestroy(){if(sidebarAnimation!=null)sidebarAnimation.cancel();cancelResolver();if(searchDebouncer!=null)searchDebouncer.cancel();if(accountClient!=null)accountClient.close();super.onDestroy();}
 }
