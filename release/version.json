@@ -1,6 +1,6 @@
 {
-  "versionCode": 16,
-  "versionName": "1.15",
+  "versionCode": 17,
+  "versionName": "1.16",
   "apkUrl": "https://kerv.github.io/movy/movy.apk",
-  "notes": "Caption recovery: CC stays clickable and searches Movy's subtitle service when browser metadata is missing; SRT download formats and exact release-track selection are handled. Provider Load more now shows loaded counts and focuses newly added cards without duplicates. All providers have additional Recently Released Movies and Recently Premiered Series views, excluding future releases. Popular uses Movy's metadata popularity ranking, not weekly charts; recent series means first premieres, not new episodes. Movie availability uses the US region. Fully native screens and update checking remain enabled."
+  "notes": "Branded provider tiles with service logos and smooth focus animation. Provider browsing now grows downward in poster grids: independent Load more movies and Load more series buttons, jump links, separate pagination/retry/end states, and no replacement of existing cards. Offscreen poster bitmaps are released for longer browsing sessions. The loading screen stays visible until the native player opens. A new Sources menu selects Movy's advertised playback servers or refreshes the current source while preserving position and play/pause state; cancellation or resolution failure keeps the previous stream. Quality choices remain separate. Native captions, accounts, recent-release views, and update checking remain enabled."
 }

@@ -14,6 +14,28 @@ import static org.junit.Assert.*;
 @Config(sdk=28)
 @androidx.annotation.OptIn(markerClass=androidx.media3.common.util.UnstableApi.class)
 public class PlaybackTracksTest {
+    @Test public void nativeSourcesMenuIncludesServersAndRefresh() throws Exception {
+        PlayerActivity activity=org.robolectric.Robolectric.buildActivity(PlayerActivity.class).get();
+        java.lang.reflect.Field field=PlayerActivity.class.getDeclaredField("available");field.setAccessible(true);field.set(activity,new PlaybackTracks("{\"server\":\"Miami\",\"servers\":[{\"name\":\"Miami\"},{\"name\":\"Boise\"}]}"));
+        java.lang.reflect.Method method=PlayerActivity.class.getDeclaredMethod("sources");method.setAccessible(true);method.invoke(activity);
+        android.app.AlertDialog dialog=org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog();
+        assertEquals(3,dialog.getListView().getAdapter().getCount());assertEquals("✓ Miami",dialog.getListView().getAdapter().getItem(0));assertEquals("Boise",dialog.getListView().getAdapter().getItem(1));assertEquals("Refresh current source",dialog.getListView().getAdapter().getItem(2));dialog.dismiss();
+    }
+    @Test public void cancelledSourceChangeKeepsPositionAndRestoresPausedOrPlayingState() throws Exception {
+        PlayerActivity activity=org.robolectric.Robolectric.buildActivity(PlayerActivity.class).get();androidx.media3.exoplayer.ExoPlayer player=new androidx.media3.exoplayer.ExoPlayer.Builder(activity).build();
+        try {
+            for(String name:new String[]{"player","root","view"}){java.lang.reflect.Field field=PlayerActivity.class.getDeclaredField(name);field.setAccessible(true);field.set(activity,name.equals("player")?player:name.equals("root")?new android.widget.FrameLayout(activity):new androidx.media3.ui.PlayerView(activity));}
+            player.seekTo(91234);java.lang.reflect.Method show=PlayerActivity.class.getDeclaredMethod("showSourceLoading",String.class);show.setAccessible(true);show.invoke(activity,"Boise");
+            java.lang.reflect.Field flag=PlayerActivity.class.getDeclaredField("sourceWasPlaying");flag.setAccessible(true);flag.set(activity,true);
+            java.lang.reflect.Method cancel=PlayerActivity.class.getDeclaredMethod("cancelSource",boolean.class);cancel.setAccessible(true);cancel.invoke(activity,true);assertTrue(player.getPlayWhenReady());assertEquals(91234,player.getCurrentPosition());
+            java.lang.reflect.Field overlay=PlayerActivity.class.getDeclaredField("sourceLoading");overlay.setAccessible(true);assertEquals(android.view.View.GONE,((android.view.View)overlay.get(activity)).getVisibility());
+            player.pause();flag.set(activity,false);show.invoke(activity,"Miami");cancel.invoke(activity,true);assertFalse(player.getPlayWhenReady());assertEquals(91234,player.getCurrentPosition());
+        } finally {player.release();}
+    }
+    @Test public void sourceServersAreSeparateFromQualityAndDeduplicated(){
+        PlaybackTracks tracks=new PlaybackTracks("{\"server\":\"Miami\",\"servers\":[{\"name\":\"Miami\",\"label\":\"Miami · US\"},{\"name\":\"Boise\"},{\"name\":\"Miami\"},{\"name\":\"\"}],\"sources\":[{\"url\":\"https://media.example/4k.m3u8\",\"label\":\"2160p\"}]}");
+        assertEquals("Miami",tracks.server);assertEquals(2,tracks.servers.size());assertEquals("Boise",tracks.servers.get(1).label);assertEquals(1,tracks.sources.size());assertEquals("2160p",tracks.sources.get(0).label);
+    }
     @Test public void lateSubtitleSelectionChoosesExactEditionRatherThanSameLanguage() throws Exception {
         PlayerActivity activity=org.robolectric.Robolectric.buildActivity(PlayerActivity.class).get();
         androidx.media3.exoplayer.ExoPlayer player=new androidx.media3.exoplayer.ExoPlayer.Builder(activity).build();

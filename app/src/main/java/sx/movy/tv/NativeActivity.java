@@ -88,7 +88,7 @@ public class NativeActivity extends android.app.Activity {
         LinearLayout tabs=new LinearLayout(this);tabs.setPadding(0,dp(12),0,dp(14));
         for(String value:new String[]{"All","Movies","Series"})addButton(tabs,(filter.equals(value)?"● ":"")+value,()->{filter=value;showHome();});
         addButton(tabs,"Refresh",()->{homeRows=null;providersLoaded=false;showHome();});content.addView(tabs);
-        LinearLayout providers=new LinearLayout(this);providers.setPadding(0,dp(4),0,dp(14));for(CatalogClient.Provider p:CatalogClient.PROVIDERS)addButton(providers,p.name,()->showProvider(p));HorizontalScrollView providerStrip=new HorizontalScrollView(this);providerStrip.setHorizontalScrollBarEnabled(false);providerStrip.setSmoothScrollingEnabled(true);providerStrip.addView(providers);content.addView(providerStrip);
+        LinearLayout providers=new LinearLayout(this);providers.setPadding(dp(6),dp(8),dp(6),dp(20));providers.setClipChildren(false);for(CatalogClient.Provider p:CatalogClient.PROVIDERS)providers.addView(providerTile(p));HorizontalScrollView providerStrip=new HorizontalScrollView(this);providerStrip.setHorizontalScrollBarEnabled(false);providerStrip.setSmoothScrollingEnabled(true);providerStrip.setClipChildren(false);providerStrip.addView(providers);content.addView(providerStrip);
         List<CatalogClient.Row> rows=new ArrayList<>();for(CatalogClient.Row row:homeRows){List<CatalogClient.Title> titles=new ArrayList<>();for(CatalogClient.Title title:row.titles)if(filter.equals("All")||(filter.equals("Series")==title.isSeries()))titles.add(title);if(!titles.isEmpty())rows.add(new CatalogClient.Row(row.name,titles));}
         if(!rows.isEmpty())hero(rows.get(0).titles.get(0),null,false);
         accountRows=column();content.addView(accountRows);renderAccountRows();readAccount(false);
@@ -153,19 +153,55 @@ public class NativeActivity extends android.app.Activity {
         begin("provider");header();section((recent?"Recently released on ":"Popular on ")+provider.name);
         LinearLayout filters=new LinearLayout(this);addButton(filters,recent?"Popular":"✓ Popular",()->showProvider(provider,false));addButton(filters,recent?"✓ Recently released":"Recently released",()->showProvider(provider,true));content.addView(filters);
         TextView note=text(recent?"Newest original movie releases and series premieres, not new episodes or newly added titles · US movie availability":"Movy metadata popularity ranking, not weekly charts · US movie availability",14);note.setTextColor(MUTED);content.addView(note);
-        TextView status=text("Loading titles…",14);status.setTextColor(MUTED);content.addView(status);
-        Map<String,LinearLayout> rails=new LinkedHashMap<>();int token=generation;int[] page={0};Button more=button("Load more",()->{});more.setEnabled(false);
-        Runnable[] fetch=new Runnable[1];fetch[0]=()->{more.setEnabled(false);more.setText("Loading…");status.setText("Loading page "+(page[0]+1)+"…");CatalogClient.providerPage(provider,page[0]+1,recent,(rows,error)->{
-            if(token!=generation)return;more.setEnabled(true);more.setText("Load more");if(error!=null){more.setText("Retry loading");status.setText("Couldn’t load this page. Select Retry loading.");return;}page[0]++;boolean any=false;View firstNew=null;int added=0,total=0;
-            // Keep existing rails and focused cards; append the next page.
-            content.removeView(more);for(CatalogClient.Row row:rows){if(row.titles.isEmpty())continue;any=true;LinearLayout cards=rails.get(row.name);if(cards==null){cards=rail(new CatalogClient.Row(row.name,new ArrayList<>()));rails.put(row.name,cards);}int before=cards.getChildCount();View next=appendProviderTitles(cards,row.titles);added+=cards.getChildCount()-before;if(firstNew==null)firstNew=next;}
-            for(LinearLayout cards:rails.values())total+=cards.getChildCount();status.setText(total+" titles loaded · Page "+page[0]+" · "+added+" new titles");
-            LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(dp(180),dp(46));mp.topMargin=dp(20);content.addView(more,mp);if(!any){more.setText("No more titles");more.setEnabled(false);}else if(page[0]>1&&firstNew!=null){View target=firstNew;target.post(()->{if(token==generation){target.requestFocus();((android.widget.HorizontalScrollView)target.getParent().getParent()).smoothScrollTo(target.getLeft(),0);}});}
-        });};more.setOnClickListener(v->fetch[0].run());content.addView(more,new LinearLayout.LayoutParams(dp(180),dp(46)));fetch[0].run();
+        LinearLayout jump=new LinearLayout(this);content.addView(jump);
+        ProviderSection movies=createProviderSection(recent?"Recently Released Movies":"Popular Movies","movie");
+        ProviderSection series=createProviderSection(recent?"Recently Premiered Series":"Popular Series","tv");
+        addButton(jump,"Browse movies ↓",()->focusProviderSection(movies));addButton(jump,"Browse series ↓",()->focusProviderSection(series));
+        int token=generation;movies.more.setOnClickListener(v->loadProviderSection(provider,recent,movies,token));series.more.setOnClickListener(v->loadProviderSection(provider,recent,series,token));
+        loadProviderSection(provider,recent,movies,token);loadProviderSection(provider,recent,series,token);
     }
-    View appendProviderTitles(LinearLayout cards,List<CatalogClient.Title> titles){
-        java.util.Set<String> seen=new java.util.HashSet<>();for(int i=0;i<cards.getChildCount();i++)seen.add((String)cards.getChildAt(i).getTag());View first=null;
-        for(CatalogClient.Title title:titles)if(seen.add(title.slug)){View item=card(title,(TextView)cards.getTag());cards.addView(item);if(first==null)first=item;}return first;
+    private View providerTile(CatalogClient.Provider provider){
+        LinearLayout tile=column();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(12),dp(12),dp(12),dp(10));tile.setFocusable(true);tile.setClickable(true);tile.setContentDescription("Browse "+provider.name);tile.setBackground(providerBackground(provider,false));
+        ImageView logo=new ImageView(this);logo.setScaleType(ImageView.ScaleType.FIT_CENTER);tile.addView(logo,new LinearLayout.LayoutParams(dp(104),dp(44)));image(logo,provider.logo);
+        TextView name=label(provider.name,13);name.setGravity(Gravity.CENTER);name.setPadding(0,dp(8),0,0);tile.addView(name);
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(dp(150),dp(102));params.rightMargin=dp(14);tile.setLayoutParams(params);
+        tile.setOnClickListener(v->showProvider(provider));tile.setOnFocusChangeListener((v,focused)->{tile.setBackground(providerBackground(provider,focused));tile.animate().scaleX(focused?1.06f:1f).scaleY(focused?1.06f:1f).translationZ(focused?dp(6):0).setDuration(180).start();});return tile;
+    }
+    private GradientDrawable providerBackground(CatalogClient.Provider provider,boolean focused){
+        int tint=(provider.color&0x00ffffff)|0xff000000;GradientDrawable background=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{androidx.core.graphics.ColorUtils.blendARGB(PANEL,tint,focused?.48f:.22f),PANEL});background.setCornerRadius(dp(14));background.setStroke(dp(focused?2:1),focused?Color.WHITE:androidx.core.graphics.ColorUtils.blendARGB(PANEL,tint,.5f));return background;
+    }
+    static final class ProviderSection {
+        final String type;final LinearLayout block,grid;final TextView preview,status;final Button more;final int columns;
+        final Set<String> seen=new HashSet<>();int page;boolean fetching,ended;
+        ProviderSection(String type,LinearLayout block,LinearLayout grid,TextView preview,TextView status,Button more,int columns){this.type=type;this.block=block;this.grid=grid;this.preview=preview;this.status=status;this.more=more;this.columns=columns;}
+    }
+    ProviderSection createProviderSection(String heading,String type){
+        LinearLayout block=column();content.addView(block);TextView title=label(heading,22);title.setPadding(0,dp(24),0,dp(12));block.addView(title);
+        TextView preview=text("",14);preview.setTextColor(MUTED);preview.setMinHeight(dp(24));block.addView(preview);
+        LinearLayout grid=column();grid.setClipChildren(false);block.addView(grid);
+        TextView status=text("Loading…",14);status.setTextColor(MUTED);status.setPadding(0,dp(12),0,dp(12));block.addView(status);
+        Button more=button(type.equals("movie")?"Load more movies":"Load more series",()->{});block.addView(more,new LinearLayout.LayoutParams(dp(220),dp(46)));
+        int width=Math.round(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density)-64;
+        return new ProviderSection(type,block,grid,preview,status,more,Math.max(1,width/204));
+    }
+    private void focusProviderSection(ProviderSection section){if(section.grid.getChildCount()>0)((LinearLayout)section.grid.getChildAt(0)).getChildAt(0).requestFocus();else section.more.requestFocus();}
+    View appendProviderPage(ProviderSection section,CatalogClient.ProviderPage page){
+        View first=null;int added=0;
+        for(CatalogClient.Title title:page.titles)if(section.seen.add(title.slug)){
+            LinearLayout row=section.grid.getChildCount()==0?null:(LinearLayout)section.grid.getChildAt(section.grid.getChildCount()-1);
+            if(row==null||row.getChildCount()>=section.columns){row=new LinearLayout(this);row.setGravity(Gravity.TOP);row.setClipChildren(false);row.setPadding(dp(6),dp(8),0,dp(12));section.grid.addView(row);}
+            View item=card(title,section.preview);row.addView(item);if(first==null)first=item;added++;
+        }
+        section.page=page.page;section.ended=page.titles.isEmpty()||page.page>=Math.min(500,page.totalPages);section.status.setText(section.seen.size()+" "+(section.type.equals("movie")?"movies":"series")+" loaded · "+added+" new · Page "+section.page);
+        section.more.setEnabled(!section.ended);section.more.setText(section.ended?"All available titles loaded":section.type.equals("movie")?"Load more movies":"Load more series");return first;
+    }
+    private void loadProviderSection(CatalogClient.Provider provider,boolean recent,ProviderSection section,int token){
+        if(section.fetching||section.ended)return;section.fetching=true;section.more.setEnabled(false);section.more.setText("Loading…");section.status.setText("Loading page "+(section.page+1)+"…");
+        CatalogClient.providerPage(provider,section.type,section.page+1,recent,(page,error)->{
+            if(token!=generation)return;section.fetching=false;
+            if(error!=null){section.more.setEnabled(true);section.more.setText("Retry "+(section.type.equals("movie")?"movies":"series"));section.status.setText("Couldn’t load this page. Your current titles are still here.");return;}
+            boolean paging=section.page>0;View first=appendProviderPage(section,page);if(paging&&first!=null)first.post(()->{if(token==generation)first.requestFocus();});
+        });
     }
     private View card(CatalogClient.Title title,TextView preview){
         LinearLayout card=column();card.setTag(title.slug);card.setPadding(dp(8),dp(8),dp(8),dp(10));card.setBackground(rounded(PANEL,0));card.setFocusable(true);card.setClickable(true);
@@ -178,13 +214,18 @@ public class NativeActivity extends android.app.Activity {
     }
     private void image(ImageView view,String url){
         if(url==null||url.isEmpty())return;
-        // Decode only artwork that reaches the viewport. A TV must not hold
-        // hundreds of full poster bitmaps simply because it has many rails.
+        // Long provider grids retain their cards, but not offscreen bitmaps.
+        // The shared bounded cache makes scrolling back cheap without keeping
+        // every poster visited alive in its ImageView for the whole session.
         view.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener(){
+            boolean fetching,displayed,failed;
             @Override public boolean onPreDraw(){
-                if(view.getGlobalVisibleRect(new android.graphics.Rect())){
-                    view.getViewTreeObserver().removeOnPreDrawListener(this);
-                    CatalogClient.image(url,(bitmap,error)->{if(bitmap!=null&&!isDestroyed()&&view.isAttachedToWindow())view.setImageBitmap(bitmap);});
+                boolean visible=view.getGlobalVisibleRect(new android.graphics.Rect());
+                if(!visible){if(displayed){view.setImageDrawable(null);displayed=false;}failed=false;}
+                else if(!fetching&&!displayed&&!failed){
+                    fetching=true;CatalogClient.image(url,(bitmap,error)->{fetching=false;if(isDestroyed()||!view.isAttachedToWindow())return;failed=bitmap==null;
+                        if(bitmap!=null&&view.getGlobalVisibleRect(new android.graphics.Rect())){view.setImageBitmap(bitmap);displayed=true;}
+                    });
                 }
                 return true;
             }
@@ -240,10 +281,13 @@ public class NativeActivity extends android.app.Activity {
         if(resolver!=null)return;final String path=title.isSeries()?"/tv/"+title.id+"/"+season+"/"+episode:title.slug;
         loadingTitle.setText(title.title);image(loadingArt,title.backdrop);busy(true,"Finding the best available source…");StreamResolver current=new StreamResolver(this,root);resolver=current;int token=generation;
         current.start(CatalogClient.SITE+path+"?play=true",new StreamResolver.Callback(){
-            @Override public void ready(String url,HashMap<String,String> headers,String tracks){if(token!=generation)return;resolver=null;busy(false,"");Intent intent=new Intent(NativeActivity.this,PlayerActivity.class);intent.setData(Uri.parse(url));intent.putExtra("headers",headers);intent.putExtra("tracks",tracks);intent.putExtra("title",title.title);intent.putExtra("poster",title.poster);intent.putExtra("key",path);intent.putExtra("position",restart?0:resumePosition(title,path));returnFromPlayer=true;startActivityForResult(intent,410);}
+            @Override public void ready(String url,HashMap<String,String> headers,String tracks){if(token==generation)openPlayer(title,path,url,headers,tracks,restart);}
             @Override public void progress(String message){if(token==generation)loadingText.setText(message);}
             @Override public void failed(String message){if(token!=generation)return;resolver=null;busy(false,"");new AlertDialog.Builder(NativeActivity.this).setTitle("Unable to start playback").setMessage("This source is unavailable. Please try again shortly.").setPositiveButton("Try again",(d,w)->play(title,season,episode,restart)).setNegativeButton("Cancel",null).show();}
         });
+    }
+    void openPlayer(CatalogClient.Title title,String path,String url,HashMap<String,String> headers,String tracks,boolean restart){
+        resolver=null;loadingText.setText("Opening player…");Intent intent=new Intent(this,PlayerActivity.class);intent.setData(Uri.parse(url));intent.putExtra("headers",headers);intent.putExtra("tracks",tracks);intent.putExtra("title",title.title);intent.putExtra("poster",title.poster);intent.putExtra("key",path);intent.putExtra("position",restart?0:resumePosition(title,path));returnFromPlayer=true;startActivityForResult(intent,410);overridePendingTransition(0,0);
     }
     private void cancelResolver(){if(resolver!=null){resolver.close();resolver=null;}if(loading!=null)loading.setVisibility(View.GONE);}
     private String resumeKey(CatalogClient.Title title){String local=library.resumeKey(title);if(library.position(local)>0)return local;return account==null?title.slug:account.resume(title).slug;}
@@ -307,8 +351,8 @@ public class NativeActivity extends android.app.Activity {
             @Override public void onError(String message){}
         });
     }
-    @Override protected void onPause(){super.onPause();if(updater!=null)updater.onActivityPaused();cancelResolver();}
-    @Override protected void onResume(){super.onResume();if(updater!=null)updater.onActivityResumed(this);if(returnFromPlayer){returnFromPlayer=false;if(detailTitle!=null)showDetail(detailTitle);}}
+    @Override protected void onPause(){super.onPause();if(updater!=null)updater.onActivityPaused();if(!returnFromPlayer)cancelResolver();}
+    @Override protected void onResume(){super.onResume();if(updater!=null)updater.onActivityResumed(this);if(returnFromPlayer){returnFromPlayer=false;busy(false,"");if(detailTitle!=null)showDetail(detailTitle);}}
     @Override protected void onActivityResult(int request,int result,Intent data){
         super.onActivityResult(request,result,data);
         if(request==410&&result==RESULT_OK&&data!=null&&detailTitle!=null){

@@ -10,9 +10,13 @@ metadata and resolves a stream only after Play is selected.
   ratings, genres, cast, recommendations, and season/episode selection.
 - Search automatically runs after a 650 ms typing pause (two or more characters).
   Manual search also works. Older requests cannot replace newer search results.
-- Provider shortcuts offer Popular and Recently Released views. Load more
-  appends unique cards, displays counts, and moves focus/scroll to the first new
-  title. Partial request failures are retried without silently skipping a page.
+- Branded provider shortcuts use Movy's service logos, readable text fallbacks,
+  colored gradients, and smooth remote-focus animation.
+- Provider shortcuts offer Popular and Recently Released views in downward-growing
+  poster grids. Movies and series have independent Load more buttons, page counts,
+  retries, end states, and jump links. Existing cards remain in place; focus moves
+  to the first newly added card. Offscreen artwork is released and reused through
+  a bounded cache. A failed request does not skip a page or block the other type.
   Popular is the metadata popularity ranking, not a weekly viewing chart.
   Recent sorts original movie releases and first series premieres newest first,
   excluding future/unknown dates; it does not mean newly added or new episodes.
@@ -27,6 +31,13 @@ metadata and resolves a stream only after Play is selected.
   Native progress is not currently written back to the Movy account.
 - Native video playback, resume, next episode, source quality choices, audio
   selection, caption selection, speed, and remote media keys.
+- The title's loading overlay remains visible until the player opens, avoiding
+  a flash back to the selection screen. The player's horizontally scrollable
+  toolbar has a separate Sources menu populated from Movy's advertised server
+  buttons, plus Refresh current source. Server selection resolves on demand and
+  preserves position and play/pause state; cancellation or resolution failure
+  keeps the previous stream. Servers may offer different audio/release editions;
+  selecting one is not a guarantee of better performance. Quality remains separate.
 - External VTT/SRT subtitle files advertised by Movy are merged with HLS using
   Media3's `DefaultMediaSourceFactory`; both CC and the toolbar subtitle menu
   expose the available tracks. If browser metadata is missing, native playback
@@ -53,6 +64,9 @@ Two internal browser connections remain:
    and forwards the actual User-Agent, Referer, Origin, and required headers to
    Media3. It has a 45-second deadline and supports cancellation. Browsing does
    not resolve media. Playlist/HTTP errors can trigger one source refresh.
+   For a requested server, it selects that advertised server before rendition
+   selection and accepts only matching playlists (or the confirmed current
+   default server). An absent requested server does not silently fall back.
 2. **Account access:** a blank local document with Movy's base origin reads the
    existing JWT/profile state and calls the same account backend as the site.
    It renders no site UI. The native interface sends only fixed account actions;
@@ -95,7 +109,9 @@ npm test
 Debug APK: `app/build/outputs/apk/debug/app-debug.apk`.
 
 Robolectric checks native loading/layout, search delay/cancellation, local resume,
-and actual Media3 subtitle merging. Browser fixtures check the resolver bridge
+downward grid appends, independent movie/series pagination, player handoff,
+source-menu/cancel state, and actual Media3 subtitle merging.
+Browser fixtures check requested server selection and the resolver bridge
 and account login, profile scoping/PIN denial, list/resume normalization, logout,
 and credential isolation. Fixtures do not prove a real signed-in account works;
 that and TV caption rendering/remote behavior still require device validation.

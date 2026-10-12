@@ -24,13 +24,30 @@ import java.util.List;
 @Config(sdk=28)
 @LooperMode(LooperMode.Mode.PAUSED)
 public class NativeUiTest {
-    @Test public void providerPagingReturnsFirstNewCardAndDoesNotDuplicateTitles() throws Exception {
-        NativeActivity a=activity();LinearLayout cards=new LinearLayout(a);cards.setTag(new TextView(a));
-        CatalogClient.Title first=new CatalogClient.Title(new JSONObject().put("id",1).put("slug","/tv/1").put("name","First"));
-        CatalogClient.Title second=new CatalogClient.Title(new JSONObject().put("id",2).put("slug","/tv/2").put("name","Second"));
-        a.appendProviderTitles(cards,java.util.Collections.singletonList(first));
-        View next=a.appendProviderTitles(cards,java.util.Arrays.asList(first,second));assertEquals(2,cards.getChildCount());assertSame(cards.getChildAt(1),next);assertEquals("/tv/2",next.getTag());assertTrue(next.isFocusable());
-        assertNull(a.appendProviderTitles(cards,java.util.Collections.singletonList(second)));
+    @Test public void providerPagesGrowDownwardPreservingCardsAndHaveIndependentSeriesPaging() throws Exception {
+        NativeActivity a=activity();call(a,"begin",new Class[]{String.class},"provider");
+        NativeActivity.ProviderSection movies=a.createProviderSection("Movies","movie"),series=a.createProviderSection("Series","tv");
+        List<CatalogClient.Title> firstPage=new ArrayList<>();for(int i=1;i<=movies.columns;i++)firstPage.add(new CatalogClient.Title(new JSONObject().put("id",i).put("slug","/movie/"+i).put("title","Movie "+i)));
+        View original=a.appendProviderPage(movies,new CatalogClient.ProviderPage(firstPage,1,3));LinearLayout originalRow=(LinearLayout)movies.grid.getChildAt(0);
+        CatalogClient.Title extra=new CatalogClient.Title(new JSONObject().put("id",100).put("slug","/movie/100").put("title","Next movie"));
+        View next=a.appendProviderPage(movies,new CatalogClient.ProviderPage(java.util.Arrays.asList(firstPage.get(0),extra),2,3));
+        assertEquals(2,movies.grid.getChildCount());assertSame(originalRow,movies.grid.getChildAt(0));assertSame(original,originalRow.getChildAt(0));assertSame(next,((LinearLayout)movies.grid.getChildAt(1)).getChildAt(0));assertEquals(movies.columns+1,movies.seen.size());assertEquals(2,movies.page);assertEquals(0,series.page);
+        CatalogClient.Title tv=new CatalogClient.Title(new JSONObject().put("id",200).put("slug","/tv/200").put("name","A series"));
+        a.appendProviderPage(series,new CatalogClient.ProviderPage(java.util.Collections.singletonList(tv),1,2));assertEquals(1,series.page);assertEquals(2,movies.page);assertTrue(series.more.isEnabled());assertEquals("Load more series",series.more.getText());
+        a.appendProviderPage(movies,new CatalogClient.ProviderPage(java.util.Collections.emptyList(),3,3));assertTrue(movies.ended);assertFalse(movies.more.isEnabled());assertTrue(series.more.isEnabled());
+        a.appendProviderPage(series,new CatalogClient.ProviderPage(java.util.Collections.singletonList(new CatalogClient.Title(new JSONObject().put("id",201).put("slug","/tv/201"))),2,2));assertEquals(2,series.seen.size());assertTrue(series.ended);
+    }
+    @Test public void providerTileHasLogoLabelAndRemoteFocus() throws Exception {
+        NativeActivity a=activity();LinearLayout tile=(LinearLayout)call(a,"providerTile",new Class[]{CatalogClient.Provider.class},CatalogClient.PROVIDERS[3]);
+        assertTrue(tile.getChildAt(0) instanceof android.widget.ImageView);assertEquals(android.widget.ImageView.ScaleType.FIT_CENTER,((android.widget.ImageView)tile.getChildAt(0)).getScaleType());assertEquals("Disney+",((TextView)tile.getChildAt(1)).getText());assertTrue(tile.isFocusable());assertTrue(tile.hasOnClickListeners());assertEquals("Browse Disney+",tile.getContentDescription());
+    }
+    @Test public void playerHandoffKeepsLoadingOverlayUntilReturn() throws Exception {
+        NativeActivity a=activity();call(a,"begin",new Class[]{String.class},"detail");call(a,"busy",new Class[]{boolean.class,String.class},true,"Preparing…");
+        CatalogClient.Title title=new CatalogClient.Title(new JSONObject().put("id",603).put("slug","/movie/603").put("title","The Matrix"));
+        a.openPlayer(title,title.slug,"https://media.example/video.m3u8",new java.util.HashMap<>(),"{}",false);
+        a.onPause();assertEquals(View.VISIBLE,((View)get(a,"loading")).getVisibility());assertEquals("Opening player…",((TextView)get(a,"loadingText")).getText());assertTrue((Boolean)get(a,"returnFromPlayer"));
+        android.content.Intent intent=Shadows.shadowOf(a).getNextStartedActivity();assertEquals(PlayerActivity.class.getName(),intent.getComponent().getClassName());assertEquals(title.slug,intent.getStringExtra("key"));
+        a.onResume();assertEquals(View.GONE,((View)get(a,"loading")).getVisibility());
     }
     @Test public void providerRecentQueriesUseReleaseDatesAndExcludeFutureTitles(){
         CatalogClient.Provider disney=CatalogClient.PROVIDERS[3];String tv=CatalogClient.providerUrl(disney,"tv",2,true,"2026-10-11");

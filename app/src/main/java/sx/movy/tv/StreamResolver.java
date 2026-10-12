@@ -31,9 +31,17 @@ final class StreamResolver {
     private boolean closed;
     private String tracks = "{}";
     private boolean readingTracks;
+    private String preferredServer;
+    private boolean checkingSelected;
+    private final LinkedHashMap<String,HashMap<String,String>> pendingPlaylists=new LinkedHashMap<>();
+    private final Runnable selectedCheck=this::inspectSelectedServer;
     private final Runnable finish = this::deliver;
     StreamResolver(Activity activity, FrameLayout parent) { this.activity=activity; this.parent=parent; }
     @SuppressLint("SetJavaScriptEnabled") void start(String pageUrl, Callback callback) {
+        start(pageUrl,"",callback);
+    }
+    @SuppressLint("SetJavaScriptEnabled") void start(String pageUrl,String preferredServer,Callback callback) {
+        this.preferredServer=preferredServer==null?"":preferredServer;
         this.pageUrl=pageUrl; this.callback=callback;
         browser = new WebView(activity);
         WebSettings settings=browser.getSettings(); settings.setJavaScriptEnabled(true); settings.setDomStorageEnabled(true);
@@ -70,7 +78,27 @@ final class StreamResolver {
         browser.loadUrl(pageUrl);
     }
     private void capture(String url,HashMap<String,String> headers){
-        if(closed)return;
+        if(closed||readingTracks)return;
+        if(!preferredServer.isEmpty()){
+            pendingPlaylists.put(url,headers);if(pendingPlaylists.size()>12)pendingPlaylists.remove(pendingPlaylists.keySet().iterator().next());
+            if(!checkingSelected){handler.removeCallbacks(selectedCheck);handler.postDelayed(selectedCheck,50);}return;
+        }
+        captureAccepted(url,headers);
+    }
+    private void inspectSelectedServer(){
+        if(closed||readingTracks||checkingSelected)return;checkingSelected=true;
+        String check="JSON.stringify({ready:window.__movyNativeServerChosen==="+org.json.JSONObject.quote(preferredServer)+",acceptDefault:!!window.__movyNativeDefaultRequested,urls:(window.__movyNativeBundles||[]).reduce(function(all,b){return all.concat(b.sources.map(function(s){return s.url;}));},[])})";
+        browser.evaluateJavascript(check,value->{
+            checkingSelected=false;if(closed||readingTracks)return;
+            try{Object raw=new org.json.JSONTokener(value).nextValue();if(raw instanceof String){org.json.JSONObject data=new org.json.JSONObject((String)raw);if(data.optBoolean("ready")){
+                Set<String> urls=new HashSet<>();org.json.JSONArray list=data.optJSONArray("urls");if(list!=null)for(int i=0;i<list.length();i++)urls.add(list.optString(i));
+                for(String url:new ArrayList<>(pendingPlaylists.keySet()))if(data.optBoolean("acceptDefault")||urls.contains(url))captureAccepted(url,pendingPlaylists.remove(url));
+            }}}catch(Exception ignored){}
+            handler.removeCallbacks(selectedCheck);if(!pendingPlaylists.isEmpty())handler.postDelayed(selectedCheck,200);
+        });
+    }
+    private void captureAccepted(String url,HashMap<String,String> headers){
+        if(closed||readingTracks)return;
         java.util.regex.Matcher match=java.util.regex.Pattern.compile("(?:s|[-_/])(\\d{3,4})p",java.util.regex.Pattern.CASE_INSENSITIVE).matcher(url);
         int height=match.find()?Integer.parseInt(match.group(1)):0;
         if(candidate==null || height>=bestHeight){candidate=url;candidateHeaders=headers;bestHeight=height;}
@@ -81,10 +109,10 @@ final class StreamResolver {
         if(closed||candidate==null||readingTracks)return;
         readingTracks=true;
         String selected=org.json.JSONObject.quote(candidate);
-        String pull="(function(){var bundles=window.__movyNativeBundles||[];for(var i=0;i<bundles.length;i++){var sources=bundles[i].sources||[];for(var j=0;j<sources.length;j++)if(sources[j].url==="+selected+")return JSON.stringify(bundles[i]);}return JSON.stringify(window.__movyNativeTracks||null);})()";
+        String pull="(function(){var bundles=window.__movyNativeBundles||[],data=window.__movyNativeTracks||{};for(var i=0;i<bundles.length;i++){var sources=bundles[i].sources||[];for(var j=0;j<sources.length;j++)if(sources[j].url==="+selected+")data=bundles[i];}var info=window.__movyNativeServerInfo?window.__movyNativeServerInfo():{};data.servers=info.servers||[];data.server=info.server||'';return JSON.stringify(data);})()";
         browser.evaluateJavascript(pull,value->{
             if(closed)return;
-            try{Object raw=new org.json.JSONTokener(value).nextValue();if(raw instanceof String){org.json.JSONObject data=new org.json.JSONObject((String)raw);if(data.optJSONArray("subtitles")!=null)tracks=data.toString();}}catch(Exception ignored){}
+            try{Object raw=new org.json.JSONTokener(value).nextValue();if(raw instanceof String){org.json.JSONObject data=new org.json.JSONObject((String)raw);if(data.optJSONArray("subtitles")!=null||data.optJSONArray("servers")!=null)tracks=data.toString();}}catch(Exception ignored){}
             complete();
         });
         // Some older TV WebViews fail to return an evaluation callback. Do
@@ -103,5 +131,5 @@ final class StreamResolver {
     private void fail(String message){if(closed)return;Callback done=callback;close();done.failed(message);}
     void close(){closed=true;handler.removeCallbacksAndMessages(null);if(browser!=null){browser.stopLoading();parent.removeView(browser);browser.destroy();browser=null;}}
     static boolean site(Uri uri){String h=uri.getHost();return "https".equals(uri.getScheme())&&h!=null&&(h.equals("movy.sx")||h.endsWith(".movy.sx"));}
-    private String script(){StringBuilder b=new StringBuilder();try(BufferedReader r=new BufferedReader(new InputStreamReader(activity.getAssets().open("native_resolver.js")))){String l;while((l=r.readLine())!=null)b.append(l).append('\n');}catch(Exception ignored){}return b.toString();}
+    private String script(){StringBuilder b=new StringBuilder("window.__movyNativeRequestedServer=").append(org.json.JSONObject.quote(preferredServer)).append(';');try(BufferedReader r=new BufferedReader(new InputStreamReader(activity.getAssets().open("native_resolver.js")))){String l;while((l=r.readLine())!=null)b.append(l).append('\n');}catch(Exception ignored){}return b.toString();}
 }

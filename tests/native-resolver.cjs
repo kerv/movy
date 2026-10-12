@@ -33,5 +33,28 @@ const { chromium } = require('playwright');
     await page.waitForTimeout(600);
     assert.deepEqual(await page.evaluate(() => window.clicks), ['uhd']);
     console.log('PASS resolver selects the highest watch rendition once, without clicking trailer/catalogue Play');
+    for (const requested of ['Boise', 'Miami', 'Missing server']) {
+      const fixture = await browser.newPage();
+      await fixture.setContent('<button id="trailer">Play</button><div id="vp-shell"><button id="miami" class="bg-white/[0.14]"><img src="/flags/us.svg" alt="Miami">Miami</button><button id="boise"><img src="/flags/us.svg" alt="Boise">Boise</button><button id="uhd">2160p</button></div>');
+      await fixture.evaluate(requested => {
+        window.__movyNativeRequestedServer = requested; window.clicks = [];
+        document.addEventListener('click', e => window.clicks.push(e.target.id));
+        document.querySelector('#boise').addEventListener('click', () => {
+          document.querySelector('#miami').className = ''; document.querySelector('#boise').className = 'bg-white/[0.14]';
+          JSON.parse(JSON.stringify({sources:[{url:'https://boise.example/video.m3u8',quality:'2160p'}],subtitles:[{url:'https://boise.example/en.vtt',lang:'eng'}]}));
+        });
+      }, requested);
+      await fixture.evaluate(source);
+      await fixture.evaluate(() => JSON.parse(JSON.stringify({sources:[{url:'https://miami.example/video.m3u8',quality:'1080p'}],subtitles:[]})));
+      await fixture.waitForTimeout(1100);
+      const result = await fixture.evaluate(() => ({clicks:window.clicks,chosen:window.__movyNativeServerChosen,tracks:window.__movyNativeTracks,bundles:window.__movyNativeBundles}));
+      if (requested === 'Boise') {
+        assert.deepEqual(result.clicks,['boise','uhd']);assert.equal(result.tracks.server,'Boise');assert.equal(result.tracks.sources[0].url,'https://boise.example/video.m3u8');
+        assert.equal(result.tracks.servers.length,2);assert.equal(result.bundles.length,1);
+      } else if (requested === 'Miami') {assert.deepEqual(result.clicks,['uhd']);assert.equal(result.chosen,'Miami');}
+      else {assert.deepEqual(result.clicks,[]);assert.equal(result.chosen,undefined);}
+      await fixture.close();
+    }
+    console.log('PASS requested servers are selected before quality, default-server refresh works, and absent servers never silently fall back');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });

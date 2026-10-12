@@ -12,8 +12,11 @@ import java.util.*;
 @androidx.annotation.OptIn(markerClass=androidx.media3.common.util.UnstableApi.class)
 final class PlaybackTracks {
     static final class Source {final String url,label;Source(String url,String label){this.url=url;this.label=label;}}
+    static final class Server {final String name,label;Server(String name,String label){this.name=name;this.label=label;}}
     final List<MediaItem.SubtitleConfiguration> subtitles=new ArrayList<>();
     final List<Source> sources=new ArrayList<>();
+    final List<Server> servers=new ArrayList<>();
+    String server="";
     PlaybackTracks(String raw){
         try {JSONObject data=new JSONObject(raw==null?"{}":raw);JSONArray subs=data.optJSONArray("subtitles"),media=data.optJSONArray("sources");Set<String>seen=new HashSet<>();
             if(subs!=null)for(int i=0;i<subs.length();i++){JSONObject s=subs.optJSONObject(i);if(s==null)continue;String url=s.optString("url");if(!https(url)||!seen.add(url))continue;
@@ -22,6 +25,8 @@ final class PlaybackTracks {
                 subtitles.add(new MediaItem.SubtitleConfiguration.Builder(Uri.parse(url)).setId("movy-sub-"+i).setLabel(label).setLanguage(language).setMimeType(mime).setRoleFlags(C.ROLE_FLAG_SUBTITLE).build());
             }
             seen.clear();if(media!=null)for(int i=0;i<media.length();i++){JSONObject s=media.optJSONObject(i);if(s==null)continue;String url=s.optString("url");if(https(url)&&seen.add(url))sources.add(new Source(url,languageLabel(s.optString("label"),"","Source "+(i+1))));}
+            JSONArray advertised=data.optJSONArray("servers");seen.clear();if(advertised!=null)for(int i=0;i<Math.min(40,advertised.length());i++){JSONObject s=advertised.optJSONObject(i);if(s==null)continue;String name=s.optString("name").trim();if(name.isEmpty()||name.length()>60||!seen.add(name))continue;servers.add(new Server(name,languageLabel(s.optString("label"),"",name)));}
+            server=data.optString("server");
         }catch(Exception ignored){}
     }
     static boolean https(String url){Uri uri=Uri.parse(url);return "https".equalsIgnoreCase(uri.getScheme())&&uri.getHost()!=null;}

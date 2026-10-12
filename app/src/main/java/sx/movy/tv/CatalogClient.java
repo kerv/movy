@@ -60,28 +60,27 @@ final class CatalogClient {
         Row(String name, List<Title> titles) { this.name = name; this.titles = titles; }
     }
     static final class Provider {
-        final String name;final int network,watchId;
-        Provider(String name,int network,int watchId){this.name=name;this.network=network;this.watchId=watchId;}
+        final String name,logo;final int network,watchId,color;
+        Provider(String name,int network,int watchId,String logo,int color){this.name=name;this.network=network;this.watchId=watchId;this.logo=SITE+"/streamings/"+logo+".webp";this.color=color;}
     }
-    static final Provider[] PROVIDERS={new Provider("Netflix",213,8),new Provider("Prime Video",1024,9),new Provider("HBO Max",3186,1899),new Provider("Disney+",2739,337),new Provider("Apple TV+",2552,350),new Provider("Paramount+",4330,531),new Provider("Hulu",453,15)};
-    static void providerPage(Provider provider,int page,Result<List<Row>> callback){
-        providerPage(provider,page,false,callback);
+    static final Provider[] PROVIDERS={new Provider("Netflix",213,8,"netflix",0xffe50914),new Provider("Prime Video",1024,9,"prime",0xff00a8e1),new Provider("HBO Max",3186,1899,"hbo",0xff7950e8),new Provider("Disney+",2739,337,"disney",0xff3869dc),new Provider("Apple TV+",2552,350,"apple",0xff8f9aaa),new Provider("Paramount+",4330,531,"paramount",0xff2874ee),new Provider("Hulu",453,15,"hulu",0xff1ce783)};
+    static final class ProviderPage {
+        final List<Title> titles;final int page,totalPages;
+        ProviderPage(List<Title> titles,int page,int totalPages){this.titles=titles;this.page=page;this.totalPages=totalPages;}
     }
     static String providerUrl(Provider provider,String type,int page,boolean recent,String today){
         String filter=type.equals("movie")?"with_watch_providers="+provider.watchId+"&watch_region=US":"with_networks="+provider.network;
         String date=type.equals("movie")?"primary_release_date":"first_air_date";
         return "https://db.wecollege.net/3/discover/"+type+"?"+filter+"&sort_by="+(recent?date+".desc":"popularity.desc")+(recent?"&"+date+".lte="+today+"&"+date+".gte=1900-01-01":"")+"&language=en&page="+page;
     }
-    static void providerPage(Provider provider,int page,boolean recent,Result<List<Row>> callback){
+    static void providerPage(Provider provider,String type,int page,boolean recent,Result<ProviderPage> callback){
         IO.execute(()->{
-            List<Row> rows=new ArrayList<>();Exception lastError=null;
+            try {
             String today=new java.text.SimpleDateFormat("yyyy-MM-dd",java.util.Locale.US).format(new java.util.Date());
-            for(String type:new String[]{"movie","tv"})try{
-                JSONArray results=new JSONObject(get(providerUrl(provider,type,page,recent,today))).getJSONArray("results");
+                JSONObject data=new JSONObject(get(providerUrl(provider,type,page,recent,today)));JSONArray results=data.getJSONArray("results");
                 List<Title> titles=new ArrayList<>();for(int i=0;i<results.length();i++){JSONObject item=results.optJSONObject(i);if(item!=null)titles.add(fromMetadata(item,type));}
-                rows.add(new Row(recent?(type.equals("movie")?"Recently Released Movies":"Recently Premiered Series"):(type.equals("movie")?"Popular Movies":"Popular Series"),titles));
-            }catch(Exception e){lastError=e;}
-            Exception error=lastError;MAIN.post(()->callback.accept(rows,error));
+                ProviderPage result=new ProviderPage(titles,page,data.optInt("total_pages",page+1));MAIN.post(()->callback.accept(result,null));
+            }catch(Exception error){MAIN.post(()->callback.accept(null,error));}
         });
     }
 
