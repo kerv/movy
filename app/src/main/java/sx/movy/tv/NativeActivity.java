@@ -79,7 +79,7 @@ public class NativeActivity extends android.app.Activity {
         for(ProviderSection section:pageSections)if(section.fetching){section.fetching=false;section.more.setEnabled(true);section.more.setText(section.type.equals("movie")?"Retry movies":"Retry series");section.status.setText("Current titles kept. Retry to load the next page.");}
         if(detailLoading&&detailTitle!=null)showDetail(detailTitle);else if(!pendingSearch.isEmpty()&&screen.equals("search"))search(pendingSearch);
         int token=generation;root.post(()->{if(token!=generation)return;View target=state.focus!=null&&state.focus.isShown()?state.focus:state.focusTag==null?null:content.findViewWithTag(state.focusTag);if(target!=null)target.requestFocus();else if(entryControl!=null)entryControl.requestFocus();mainScroll.scrollTo(0,state.scrollY);});
-        if(accountRows!=null){renderAccountRows();readAccount(false);}return true;
+        if(screen.equals("account"))showAccount();else if(accountRows!=null){renderAccountRows();readAccount(false);}return true;
     }
 
     @Override public void onCreate(Bundle state){
@@ -403,6 +403,7 @@ public class NativeActivity extends android.app.Activity {
         content=main;if(focusedTag!=null){View replacement=accountRows.findViewWithTag(focusedTag);if(replacement!=null)replacement.requestFocus();else if(entryControl!=null)entryControl.requestFocus();}
     }
     private String accountScope(){return "account:"+(account==null?"":account.username)+":"+(account!=null&&account.profile!=null?account.profile.optString("id"):"none");}
+    private void adoptAccount(AccountClient.Snapshot snapshot){String before=accountScope();account=snapshot;if(!before.equals(accountScope()))history.clear();}
     private void continueWatching(){
         LinkedHashMap<String,CatalogClient.Title> titles=new LinkedHashMap<>();List<CatalogClient.Title> local=new ArrayList<>(library.titles("resume:"));local.addAll(library.titles("next:"));Collections.sort(local,(a,b)->Long.compare(b.updatedMs,a.updatedMs));for(CatalogClient.Title title:local)if(!titles.containsKey(PlaybackStore.titleKey(title.slug)))titles.put(PlaybackStore.titleKey(title.slug),title);
         if(account!=null&&account.profile!=null){String today=new java.text.SimpleDateFormat("yyyy-MM-dd",Locale.US).format(new Date());int token=generation;for(CatalogClient.Title completed:account.completedSeries){String lookup=accountScope()+":"+completed.slug;
@@ -430,7 +431,7 @@ public class NativeActivity extends android.app.Activity {
         accountClient.request("read",null,(snapshot,error)->{
             if(token!=generation)return;
             if(accountScreen)busy(false,"");
-            if(error==null){account=snapshot;if(accountScreen)renderAccount();else renderAccountRows();}
+            if(error==null){adoptAccount(snapshot);if(accountScreen)renderAccount();else renderAccountRows();}
             else if(accountScreen){error("Couldn’t connect to Movy. "+error.getMessage(),this::showAccount);content.addView(button("Sign in again",this::loginForm),new LinearLayout.LayoutParams(dp(180),dp(44)));}
         });
     }
@@ -463,7 +464,7 @@ public class NativeActivity extends android.app.Activity {
     private void selectProfile(JSONObject profile,String pin){JSONObject args=new JSONObject();try{args.put("id",profile.optString("id"));args.put("pin",pin);}catch(Exception ignored){}accountAction("profile",args);}
     private void accountAction(String action,JSONObject args){
         int token=generation;if(accountClient==null)accountClient=new AccountClient(this,root);loadingTitle.setText("Your Movy account");busy(true,"Updating your account…");
-        accountClient.request(action,args,(snapshot,error)->{if(token!=generation)return;busy(false,"");if(error!=null){new AlertDialog.Builder(this).setTitle("Movy account").setMessage(error.getMessage()).setPositiveButton("OK",null).show();return;}account=snapshot;renderAccount();});
+        accountClient.request(action,args,(snapshot,error)->{if(token!=generation)return;busy(false,"");if(error!=null){new AlertDialog.Builder(this).setTitle("Movy account").setMessage(error.getMessage()).setPositiveButton("OK",null).show();return;}adoptAccount(snapshot);renderAccount();});
     }
     private void error(String message,Runnable retry){TextView t=text(message,17);t.setPadding(0,dp(20),0,dp(16));content.addView(t);content.addView(button("Try again",retry),new LinearLayout.LayoutParams(dp(150),dp(46)));}
     @Override public void onBackPressed(){if(resolver!=null){cancelResolver();return;}if(sidebarExpanded){setSidebarExpanded(false);if(entryControl!=null)entryControl.requestFocus();return;}if(restoreScreen())return;if(!screen.equals("home"))showHome();else new AlertDialog.Builder(this).setTitle("Exit Movy?").setPositiveButton("Exit",(d,w)->finish()).setNegativeButton("Keep browsing",null).show();}

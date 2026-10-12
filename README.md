@@ -21,6 +21,10 @@ metadata and resolves a stream only after Play is selected.
   Returning from details restores loaded pages, scroll offsets, and card focus;
   interrupted page requests become retryable instead of leaving disabled loaders.
   This is in-memory navigation restoration, not persistence across process death.
+  Restored Account screens rebuild from the current profile/session and refresh
+  the backend, rather than displaying retained data from a previous profile.
+  Profile/username changes and sign-out clear the retained navigation stack;
+  they do not erase device-local playback data or My List.
   New library/provider pages explicitly focus the top, not their Load more controls.
 - Home puts a landscape Continue Watching rail before featured recommendations,
   combining device-local resumes/up-next with the selected Movy profile's activity.
