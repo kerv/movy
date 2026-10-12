@@ -1,3 +1,4 @@
+// Shared by the Android and Windows hidden stream connections.
 (function () {
   if (window.__movyNativeResolver) return;
   window.__movyNativeResolver = true;

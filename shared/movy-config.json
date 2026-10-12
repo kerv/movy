@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "site": "https://www.movy.sx",
+  "metadata": "https://db.wecollege.net/3",
+  "account": "https://backend.movy.sx/v1",
+  "subtitles": "https://subtitles.vidy.st/search",
+  "providers": [
+    { "name": "Netflix", "network": 213, "watchId": 8, "logo": "netflix", "color": "#E50914" },
+    { "name": "Prime Video", "network": 1024, "watchId": 9, "logo": "prime", "color": "#00A8E1" },
+    { "name": "HBO Max", "network": 3186, "watchId": 1899, "logo": "hbo", "color": "#7950E8" },
+    { "name": "Disney+", "network": 2739, "watchId": 337, "logo": "disney", "color": "#3869DC" },
+    { "name": "Apple TV+", "network": 2552, "watchId": 350, "logo": "apple", "color": "#8F9AAA" },
+    { "name": "Paramount+", "network": 4330, "watchId": 531, "logo": "paramount", "color": "#2874EE" },
+    { "name": "Hulu", "network": 453, "watchId": 15, "logo": "hulu", "color": "#1CE783" }
+  ]
+}

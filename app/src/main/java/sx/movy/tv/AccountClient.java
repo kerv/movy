@@ -58,6 +58,6 @@ final class AccountClient {
         // UI is loaded, and no catalogue/trailer/media runs in this connection.
         browser.loadDataWithBaseURL(CatalogClient.SITE+"/","<html><head></head><body></body></html>","text/html","UTF-8",null);
     }
-    private String asset(){StringBuilder out=new StringBuilder();try(BufferedReader r=new BufferedReader(new InputStreamReader(activity.getAssets().open("native_account.js")))){String line;while((line=r.readLine())!=null)out.append(line).append('\n');}catch(Exception ignored){}return out.toString();}
+    private String asset(){StringBuilder out=new StringBuilder("window.__movyAccountBase=").append(JSONObject.quote(MovyConfig.ACCOUNT)).append(';');try(BufferedReader r=new BufferedReader(new InputStreamReader(activity.getAssets().open("native_account.js")))){String line;while((line=r.readLine())!=null)out.append(line).append('\n');}catch(Exception ignored){}return out.toString();}
     void close(){closed=true;handler.removeCallbacksAndMessages(null);queued.clear();pending.clear();if(browser!=null){parent.removeView(browser);browser.destroy();browser=null;}}
 }

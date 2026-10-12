@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>Movy</AssemblyName>
+    <Product>Movy Desktop</Product>
+    <Description>Native Windows client for Movy</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Movy.Core/Movy.Core.csproj" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
+    <Content Include="../../shared/native_account.js" Link="Assets/native_account.js" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../shared/native_resolver.js" Link="Assets/native_resolver.js" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../THIRD-PARTY-NOTICES.txt" Link="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

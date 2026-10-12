@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  var base = 'https://backend.movy.sx/v1';
+  var base = window.__movyAccountBase || 'https://backend.movy.sx/v1';
   function session() {
     var token = localStorage.getItem('JWT_TOKEN') || '';
     if (!token) return null;
@@ -75,9 +75,9 @@
       var args = request.args || {}, state = session();
       if (request.action === 'login') {
         var device = localStorage.getItem('app-device-id');
-        if (!device) { device = 'movy-tv-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2); localStorage.setItem('app-device-id', device); }
+        if (!device) { device = (window.__movyNativeDevicePrefix || 'movy-tv-') + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2); localStorage.setItem('app-device-id', device); }
         var login = await api('/auth/login', 'POST', {username: args.username, password: args.password,
-          deviceName: 'Movy Android TV', deviceId: device}, null, false);
+          deviceName: window.__movyNativeDeviceName || 'Movy Android TV', deviceId: device}, null, false);
         if (!login.token) throw new Error('Movy did not return a sign-in session.');
         localStorage.setItem('JWT_TOKEN', login.token); localStorage.removeItem('app-active-profile');
       } else if (request.action === 'logout') {

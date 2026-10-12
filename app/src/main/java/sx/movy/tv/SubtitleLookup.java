@@ -16,7 +16,7 @@ final class SubtitleLookup {
     private static final Handler MAIN=new Handler(Looper.getMainLooper());
     static String endpoint(String key){
         if(key==null||!key.matches("^/(movie|tv)/[0-9]+(?:/[0-9]+/[0-9]+)?$"))throw new IllegalArgumentException("This title cannot be searched for captions.");
-        String[] parts=key.split("/");String url="https://subtitles.vidy.st/search?id="+parts[2];
+        String[] parts=key.split("/");String url=MovyConfig.SUBTITLES+"?id="+parts[2];
         if(parts[1].equals("tv"))url+="&season="+(parts.length>=5?parts[3]:"1")+"&episode="+(parts.length>=5?parts[4]:"1");
         return url;
     }

@@ -25,7 +25,7 @@ import java.util.concurrent.Executors;
 /** Small read-only client for Movy's server-rendered catalogue. It deliberately
  * stores metadata only; stream URLs are never fetched while browsing. */
 final class CatalogClient {
-    static final String SITE = "https://www.movy.sx";
+    static final String SITE = MovyConfig.SITE;
     private static final ExecutorService IO = Executors.newFixedThreadPool(3);
     private static final ExecutorService IMAGE_IO = Executors.newFixedThreadPool(3);
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
@@ -69,7 +69,7 @@ final class CatalogClient {
         final String name,logo;final int network,watchId,color;
         Provider(String name,int network,int watchId,String logo,int color){this.name=name;this.network=network;this.watchId=watchId;this.logo=SITE+"/streamings/"+logo+".webp";this.color=color;}
     }
-    static final Provider[] PROVIDERS={new Provider("Netflix",213,8,"netflix",0xffe50914),new Provider("Prime Video",1024,9,"prime",0xff00a8e1),new Provider("HBO Max",3186,1899,"hbo",0xff7950e8),new Provider("Disney+",2739,337,"disney",0xff3869dc),new Provider("Apple TV+",2552,350,"apple",0xff8f9aaa),new Provider("Paramount+",4330,531,"paramount",0xff2874ee),new Provider("Hulu",453,15,"hulu",0xff1ce783)};
+    static final Provider[] PROVIDERS=MovyConfig.PROVIDERS;
     static final class ProviderPage {
         final List<Title> titles;final int page,totalPages;
         ProviderPage(List<Title> titles,int page,int totalPages){this.titles=titles;this.page=page;this.totalPages=totalPages;}
@@ -83,7 +83,7 @@ final class CatalogClient {
     static String libraryUrl(String type,Provider provider,int genre,Sort sort,int page,String today){
         String date=type.equals("movie")?"primary_release_date":"first_air_date";
         String filter=provider==null?"":type.equals("movie")?"&with_watch_providers="+provider.watchId+"&watch_region=US":"&with_networks="+provider.network;
-        return "https://db.wecollege.net/3/discover/"+type+"?language=en&include_adult=false&sort_by="+(type.equals("movie")?sort.movie:sort.tv)+"&"+date+".lte="+today+"&"+date+".gte=1880-01-01"+filter+(genre>0?"&with_genres="+genre:"")+(sort==Sort.RATING?"&vote_count.gte=100":"")+"&page="+page;
+        return MovyConfig.METADATA+"/discover/"+type+"?language=en&include_adult=false&sort_by="+(type.equals("movie")?sort.movie:sort.tv)+"&"+date+".lte="+today+"&"+date+".gte=1880-01-01"+filter+(genre>0?"&with_genres="+genre:"")+(sort==Sort.RATING?"&vote_count.gte=100":"")+"&page="+page;
     }
     static void libraryPage(String type,Provider provider,int genre,Sort sort,int page,Result<ProviderPage> callback){
         IO.execute(()->{try{
@@ -93,12 +93,12 @@ final class CatalogClient {
         }catch(Exception error){MAIN.post(()->callback.accept(null,error));}});
     }
     static void genres(String type,Result<List<Genre>> callback){
-        IO.execute(()->{try{JSONArray data=new JSONObject(get("https://db.wecollege.net/3/genre/"+type+"/list?language=en")).getJSONArray("genres");List<Genre> genres=new ArrayList<>();for(int i=0;i<data.length();i++){JSONObject item=data.getJSONObject(i);genres.add(new Genre(item.getInt("id"),item.getString("name")));}MAIN.post(()->callback.accept(genres,null));}catch(Exception error){MAIN.post(()->callback.accept(null,error));}});
+        IO.execute(()->{try{JSONArray data=new JSONObject(get(MovyConfig.METADATA+"/genre/"+type+"/list?language=en")).getJSONArray("genres");List<Genre> genres=new ArrayList<>();for(int i=0;i<data.length();i++){JSONObject item=data.getJSONObject(i);genres.add(new Genre(item.getInt("id"),item.getString("name")));}MAIN.post(()->callback.accept(genres,null));}catch(Exception error){MAIN.post(()->callback.accept(null,error));}});
     }
     static String providerUrl(Provider provider,String type,int page,boolean recent,String today){
         String filter=type.equals("movie")?"with_watch_providers="+provider.watchId+"&watch_region=US":"with_networks="+provider.network;
         String date=type.equals("movie")?"primary_release_date":"first_air_date";
-        return "https://db.wecollege.net/3/discover/"+type+"?"+filter+"&sort_by="+(recent?date+".desc":"popularity.desc")+(recent?"&"+date+".lte="+today+"&"+date+".gte=1900-01-01":"")+"&language=en&page="+page;
+        return MovyConfig.METADATA+"/discover/"+type+"?"+filter+"&sort_by="+(recent?date+".desc":"popularity.desc")+(recent?"&"+date+".lte="+today+"&"+date+".gte=1900-01-01":"")+"&language=en&page="+page;
     }
     static void providerPage(Provider provider,String type,int page,boolean recent,Result<ProviderPage> callback){
         IO.execute(()->{
@@ -114,15 +114,13 @@ final class CatalogClient {
     static void home(Result<List<Row>> callback) { load("/", callback, true); }
     static void providers(Result<List<Row>> callback) {
         IO.execute(() -> {
-            String[] names={"primevideo","hbomax","disney","appletv","paramount","hulu"};
-            int[] networks={1024,3186,2739,2552,4330,453};
             List<Row> rows=new ArrayList<>();
             // Movy's provider selector loads these rows on demand from this
             // same metadata endpoint. They are empty in the homepage HTML.
-            for(int i=0;i<names.length;i++)try {
-                JSONArray results=new JSONObject(get("https://db.wecollege.net/3/discover/tv?with_networks="+networks[i]+"&language=en&page=1")).getJSONArray("results");
+            for(int i=1;i<PROVIDERS.length;i++)try {
+                JSONArray results=new JSONObject(get(MovyConfig.METADATA+"/discover/tv?with_networks="+PROVIDERS[i].network+"&language=en&page=1")).getJSONArray("results");
                 List<Title> titles=new ArrayList<>();for(int n=0;n<results.length();n++){JSONObject j=results.optJSONObject(n);if(j!=null)titles.add(fromMetadata(j,"tv"));}
-                if(!titles.isEmpty())rows.add(new Row(humanize(names[i]),titles));
+                if(!titles.isEmpty())rows.add(new Row("Popular on "+PROVIDERS[i].name,titles));
             }catch(Exception ignored){}
             MAIN.post(()->callback.accept(rows,null));
         });
@@ -138,7 +136,7 @@ final class CatalogClient {
     static void episodes(long id, int season, Result<JSONArray> callback) {
         IO.execute(() -> {
             try {
-                JSONArray episodes = new JSONObject(get("https://db.wecollege.net/3/tv/" + id + "/season/" + season + "?language=en")).getJSONArray("episodes");
+                JSONArray episodes = new JSONObject(get(MovyConfig.METADATA+"/tv/" + id + "/season/" + season + "?language=en")).getJSONArray("episodes");
                 MAIN.post(() -> callback.accept(episodes, null));
             } catch (java.io.FileNotFoundException missing) { MAIN.post(() -> callback.accept(new JSONArray(), null)); }
             catch (Exception e) { MAIN.post(() -> callback.accept(null, e)); }
@@ -160,7 +158,7 @@ final class CatalogClient {
                 // This is the same read-only metadata endpoint used by Movy's
                 // own search panel, not a scrape of the search UI.
                 String q = URLEncoder.encode(query, "UTF-8");
-                JSONObject response = new JSONObject(get("https://db.wecollege.net/3/search/multi?query=" + q + "&language=en&page=1"));
+                JSONObject response = new JSONObject(get(MovyConfig.METADATA+"/search/multi?query=" + q + "&language=en&page=1"));
                 JSONArray results = response.optJSONArray("results");
                 ArrayList<Title> titles = new ArrayList<>();
                 if (results != null) for (int i = 0; i < results.length(); i++) {

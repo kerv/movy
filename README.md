@@ -1,8 +1,30 @@
-# Movy TV — native Android TV
+# Movy — native Android TV and Windows
 
 A Java Android app (`sx.movy.tv`) with native home, search, title details,
 episodes, account screens, and Media3 playback. Movy supplies current catalogue
 metadata and resolves a stream only after Play is selected.
+
+A separate native Windows x64 preview lives in [`desktop/`](desktop/README.md).
+It uses WPF and an embedded mpv player, with hidden WebView2 account/resolver
+connections—not a visible website wrapper. Download its portable ZIP, extract
+everything, and run `Movy.exe`. .NET is included; WebView2 Runtime is required;
+first Play offers an official, checksum-verified mpv download. Windows builds are
+unsigned and updates are manual. Both platforms are built and published to
+GitHub Releases and the download page; Android keeps its stable signed updater.
+
+## Shared implementation
+
+- `shared/native_account.js` and `shared/native_resolver.js` are packaged unchanged
+  in both apps. Android WebView and Windows WebView2 provide small native adapters.
+- `shared/movy-config.json` owns provider mappings and backend addresses. Gradle
+  generates `MovyConfig.java`; Windows embeds the same JSON instead of maintaining
+  a second hand-written provider table.
+- Both builds test `shared/fixtures/catalog.json`; browser fixtures test the same
+  adapters, including Android/Windows device-name configuration. UI, platform
+  storage, and Media3/mpv playback remain platform-specific.
+
+The behaviors below describe Android. See the desktop README for Windows preview
+features, shortcuts, prerequisites, build instructions, and known boundaries.
 
 ## Current behavior
 
@@ -138,9 +160,9 @@ rclone, or FUSE workflow. The `plex/` experiment is ignored by Git.
 | Native outline navigation icons | `app/src/main/java/sx/movy/tv/NavigationIcon.java` |
 | Catalogue and provider requests | `app/src/main/java/sx/movy/tv/CatalogClient.java` |
 | Account connection | `app/src/main/java/sx/movy/tv/AccountClient.java` |
-| Account browser adapter | `app/src/main/assets/native_account.js` |
+| Account browser adapter | `shared/native_account.js` |
 | Stream resolver | `app/src/main/java/sx/movy/tv/StreamResolver.java` |
-| Source/subtitle browser observer | `app/src/main/assets/native_resolver.js` |
+| Source/subtitle browser observer | `shared/native_resolver.js` |
 | Caption/source metadata | `app/src/main/java/sx/movy/tv/PlaybackTracks.java` |
 | Native caption lookup fallback | `app/src/main/java/sx/movy/tv/SubtitleLookup.java` |
 | Native Media3 player | `app/src/main/java/sx/movy/tv/PlayerActivity.java` |
@@ -150,6 +172,8 @@ rclone, or FUSE workflow. The `plex/` experiment is ignored by Git.
 | Confirmed next-episode metadata | `app/src/main/java/sx/movy/tv/NextEpisodeFinder.java` |
 | Remote playback exit safeguard | `app/src/main/java/sx/movy/tv/PlaybackExitGuard.java` |
 | Self-updater | `app/src/main/java/sx/movy/tv/Updater.java` |
+| Shared provider/backend mappings | `shared/movy-config.json` |
+| Windows client and build instructions | `desktop/README.md` |
 | Release/update manifest | `release/version.json` |
 
 ## Build and validation
@@ -160,8 +184,8 @@ key so installed devices can update in place.
 
 ```bash
 ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
-node --check app/src/main/assets/native_resolver.js
-node --check app/src/main/assets/native_account.js
+node --check shared/native_resolver.js
+node --check shared/native_account.js
 npm test
 ```
 
@@ -189,8 +213,12 @@ decoding on every Android TV device.
 ## Releases
 
 Bump `versionCode`/`versionName` in `app/build.gradle` and matching fields in
-`release/version.json`. A push to `main` runs Android unit tests and lint, builds
-the signed release APK, publishes GitHub Pages, and creates a GitHub Release.
+`release/version.json`. A push to `main` runs Android unit tests/lint and shared
+browser checks, builds the signed APK and self-contained Windows x64 ZIP, runs
+Windows core/native smoke checks, publishes both downloads to GitHub Pages, and
+creates a combined release. `windows-version.json` includes the desktop ZIP's
+SHA-256 and preview/signing flags; Android's `version.json` remains its existing
+APK-only update contract.
 
 CI uses the existing `MOVY_KEYSTORE_BASE64`, `MOVY_KEYSTORE_PASSWORD`,
 `MOVY_KEY_ALIAS`, and `MOVY_KEY_PASSWORD` secrets. Never replace the signing key.

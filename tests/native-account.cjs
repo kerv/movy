@@ -15,7 +15,7 @@ const { chromium } = require('playwright');
       const request = route.request();
       if (request.method() === 'OPTIONS') { await route.fulfill({ status: 204, headers }); return; }
       const path = new URL(request.url()).pathname.replace('/v1', '');
-      calls.push({ path, profile: request.headers()['x-profile-id'] });
+      calls.push({ path, profile: request.headers()['x-profile-id'], device: path === '/auth/login' ? request.postDataJSON().deviceName : null, deviceId: path === '/auth/login' ? request.postDataJSON().deviceId : null });
       let data;
       if (path === '/auth/login') data = { token, username: 'native-test' };
       else if (path === '/user/native-test') data = { username: 'native-test', email: 'test@example.invalid' };
@@ -31,7 +31,7 @@ const { chromium } = require('playwright');
     await page.route('https://www.movy.sx/**', route => route.fulfill({ body: '<html><body></body></html>' }));
     await page.goto('https://www.movy.sx/');
     await page.evaluate(() => { window.messages = []; window.movyAccountBridge = { postMessage: message => window.messages.push(JSON.parse(message)) }; });
-    await page.evaluate(fs.readFileSync('app/src/main/assets/native_account.js', 'utf8'));
+    await page.evaluate(fs.readFileSync('shared/native_account.js', 'utf8'));
     const request = async (action, args = {}) => page.evaluate(async ({ action, args }) => {
       await window.__movyAccountRequest({ id: window.messages.length + 1, action, args });
       return window.messages.at(-1);
@@ -41,6 +41,7 @@ const { chromium } = require('playwright');
     const login = await request('login', { username: 'native-test', password: 'fixture-only' });
     assert.equal(login.snapshot.signedIn, true);
     assert.equal(login.snapshot.profile, null);
+    assert.equal(calls.find(call => call.path === '/auth/login').device, 'Movy Android TV');
     const selected = await request('profile', { id: 1 });
     assert.equal(selected.snapshot.profile.name, 'Primary');
     const history = selected.snapshot.rows.find(row => row.name.startsWith('Continue Watching'));
@@ -62,6 +63,11 @@ const { chromium } = require('playwright');
     assert.ok(!messages.includes(token));
     assert.ok(!messages.includes('fixture-only'));
     assert.equal((await request('logout')).snapshot.signedIn, false);
+    await page.evaluate(() => { window.__movyNativeDeviceName = 'Movy Windows Desktop'; window.__movyNativeDevicePrefix = 'movy-desktop-'; localStorage.removeItem('app-device-id'); });
+    assert.equal((await request('login', { username: 'native-test', password: 'fixture-only' })).snapshot.signedIn, true);
+    assert.equal(calls.filter(call => call.path === '/auth/login').at(-1).device, 'Movy Windows Desktop');
+    assert.ok(calls.filter(call => call.path === '/auth/login').at(-1).deviceId.startsWith('movy-desktop-'));
+    await request('logout');
     console.log('PASS native account sign-in, profile-scoped lists/resume, PIN rejection, logout, and credential isolation');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });

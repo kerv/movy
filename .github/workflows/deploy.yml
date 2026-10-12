@@ -1,4 +1,4 @@
-name: Build and Deploy to GitHub Pages
+name: Build Android and Windows, publish releases and Pages
 
 # Builds a signed release APK on every push to main and publishes the APK
 # together with release/version.json to GitHub Pages, so the in-app updater
@@ -102,13 +102,91 @@ jobs:
           path: artifact/*.apk
           retention-days: 7
 
-      - name: Upload Pages artifact
+      - name: Upload Android site files
+        uses: actions/upload-artifact@v4
+        with:
+          name: movy-android-site
+          path: site
+          retention-days: 7
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - name: Desktop core and shared-contract checks
+        run: dotnet run --project desktop/Movy.Core.Tests -c Release
+      - name: Publish portable Windows x64 package
+        shell: pwsh
+        run: ./desktop/build.ps1
+      - name: Ensure Microsoft WebView2 Runtime for smoke test
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "MicrosoftEdgeWebview2Setup.exe"
+          Invoke-WebRequest "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile $installer
+          $signature = Get-AuthenticodeSignature $installer
+          if ($signature.Status -ne "Valid" -or $signature.SignerCertificate.Subject -notmatch "Microsoft Corporation") { throw "Untrusted WebView2 installer" }
+          $install = Start-Process -FilePath $installer -ArgumentList "/silent", "/install" -PassThru
+          if (!$install.WaitForExit(120000)) { $install.Kill(); throw "WebView2 installation timed out" }
+          # Existing installs can produce a nonzero status; the actual runtime
+          # initialization is validated by the following app smoke test.
+      - name: Native Windows startup and player smoke test
+        shell: pwsh
+        run: |
+          $env:MOVY_SMOKE_OUTPUT = Join-Path $pwd "desktop/dist/smoke"
+          $app = Start-Process -FilePath "desktop/dist/win-x64/Movy.exe" -ArgumentList "--smoke-test" -PassThru
+          if (!$app.WaitForExit(240000)) { $app.Kill(); throw "Windows smoke test timed out" }
+          if (Test-Path "desktop/dist/smoke/result.txt") { Get-Content "desktop/dist/smoke/result.txt" }
+          if ($app.ExitCode -ne 0) { throw "Windows smoke test failed: $($app.ExitCode)" }
+      - name: Upload Windows validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movy-windows-smoke
+          path: desktop/dist/smoke
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: movy-windows
+          path: |
+            desktop/dist/*.zip
+            desktop/dist/windows-version.json
+            desktop/dist/SHA256SUMS-windows.txt
+          retention-days: 7
+
+  site:
+    needs: [build, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Android site
+        uses: actions/download-artifact@v4
+        with:
+          name: movy-android-site
+          path: site
+      - name: Download Windows package
+        uses: actions/download-artifact@v4
+        with:
+          name: movy-windows
+          path: windows
+      - name: Add Windows downloads to Pages
+        run: |
+          cp windows/movy-windows-v*-x64.zip site/movy-windows-x64.zip
+          cp windows/windows-version.json site/windows-version.json
+          sed 's/movy-windows-v[0-9.]*-x64.zip/movy-windows-x64.zip/' windows/SHA256SUMS-windows.txt > site/SHA256SUMS-windows.txt
+      - name: Upload combined Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
   deploy:
-    needs: build
+    needs: site
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -119,7 +197,7 @@ jobs:
         uses: actions/deploy-pages@v4
 
   release:
-    needs: build
+    needs: [build, windows]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -131,6 +209,12 @@ jobs:
           name: movy-apk
           path: artifact
 
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: movy-windows
+          path: artifact
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -139,12 +223,6 @@ jobs:
           CODE: ${{ needs.build.outputs.code }}
         run: |
           set -euo pipefail
-          # Skip cleanly if this version was already released.
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists; nothing to do."
-            exit 0
-          fi
-
           NOTES=$(jq -r '.notes // ""' release/version.json)
           APK=$(ls artifact/*.apk | head -1)
 
@@ -155,13 +233,27 @@ jobs:
             echo "### Download"
             echo "- APK (this release): the \`.apk\` asset attached below."
             echo "- Always-latest APK: https://kerv.github.io/movy/movy.apk"
+            echo "- Windows x64 preview: extract the attached ZIP and run Movy.exe."
+            echo "- Always-latest Windows ZIP: https://kerv.github.io/movy/movy-windows-x64.zip"
+            echo "- Windows needs WebView2 Runtime; first Play offers a checksum-verified mpv download."
+            echo "- Windows builds are unsigned; updates are manual."
             echo "- Update manifest: https://kerv.github.io/movy/version.json"
             echo ""
-            echo "Installed apps self-update from GitHub Pages automatically."
+            echo "Android self-update checks remain enabled. Windows does not install updates automatically."
           } > notes.md
 
-          gh release create "$TAG" "$APK" \
-            --title "Movy TV v${NAME}" \
-            --notes-file notes.md
-          echo "Created release $TAG with asset $APK"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # Reruns may fill in new platforms, but never overwrite a previously
+            # released binary/version with different bytes.
+            for FILE in artifact/*; do
+              BASENAME=$(basename "$FILE")
+              if ! gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fxq "$BASENAME"; then
+                gh release upload "$TAG" "$FILE"
+              fi
+            done
+          else
+            gh release create "$TAG" artifact/* --target "$GITHUB_SHA" \
+              --title "Movy v${NAME} · Android + Windows preview" \
+              --notes-file notes.md
+          fi
 

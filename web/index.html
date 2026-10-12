@@ -3,25 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Movy TV — Android TV app</title>
-<meta name="description" content="Movy TV: an Android TV app that wraps movy.sx for the remote, with ad blocking, D-pad navigation, and automatic updates.">
+<title>Movy — native Android TV and Windows apps</title>
+<meta name="description" content="Native Movy clients for Android TV and Windows: current catalog, account activity, Continue Watching, and native playback.">
 <meta property="og:title" content="Movy TV">
-<meta property="og:description" content="Android TV app for movy.sx — remote-friendly, ad-blocked, self-updating.">
+<meta property="og:description" content="Native Android TV and Windows clients for Movy. Download the APK or Windows x64 preview.">
 <meta property="og:type" content="website">
 <style>
   :root{
-    --red:#E50914;
-    --red-hi:#ff2530;
-    --bg:#0B0B14;
-    --bg-2:#12121f;
-    --card:#181826;
-    --line:#26263a;
+    --red:#d69b27;
+    --red-hi:#E9AE36;
+    --bg:#111416;
+    --bg-2:#161b1f;
+    --card:#20252a;
+    --line:#343c43;
     --text:#f4f4f8;
     --muted:#a3a3b8;
     --radius:16px;
   }
   *{box-sizing:border-box}
   html,body{margin:0}
+  html{background:var(--bg)}
   body{
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     color:var(--text);
@@ -62,7 +63,7 @@
     text-decoration:none;transition:transform .12s ease, box-shadow .12s ease, background .12s ease;
     border:1px solid transparent;
   }
-  .btn.primary{background:var(--red);color:#fff;box-shadow:0 10px 30px rgba(229,9,20,.35)}
+  .btn.primary{background:var(--red);color:#111416;box-shadow:0 10px 30px rgba(233,174,54,.2)}
   .btn.primary:hover{background:var(--red-hi);transform:translateY(-2px);box-shadow:0 14px 36px rgba(229,9,20,.45)}
   .btn.ghost{background:rgba(255,255,255,.04);color:var(--text);border-color:var(--line)}
   .btn.ghost:hover{background:rgba(255,255,255,.08);transform:translateY(-2px)}
@@ -113,14 +114,16 @@
   <div class="wrap">
     <header>
       <span class="logo"><span class="dot"></span> MOVY&nbsp;TV</span>
-      <h1>Watch <span class="accent">movy.sx</span><br>on your TV.</h1>
-      <p class="tagline">A remote-friendly Android&nbsp;TV wrapper for movy.sx — ad-blocked, D-pad navigable, and self-updating. Runs on TV boxes, phones, and tablets.</p>
+      <h1>Movy, <span class="accent">native.</span><br>TV &amp; desktop.</h1>
+      <p class="tagline">Plex-inspired libraries, your Movy account activity, and native playback. Built for Android&nbsp;TV remotes and Windows mouse &amp; keyboard—not a visible website wrapper.</p>
 
       <div class="cta">
-        <a class="btn primary" href="movy.apk" download>⬇ Download APK</a>
-        <a class="btn ghost" href="version.json">View manifest</a>
+        <a class="btn primary" href="movy.apk" download>⬇ Android APK</a>
+        <a class="btn primary" id="windows-download" href="movy-windows-x64.zip" download>⬇ Windows x64 ZIP</a>
+        <a class="btn ghost" href="https://github.com/kerv/movy/releases">All releases</a>
       </div>
-      <p class="version">Latest release: <b>v<span id="ver">…</span></b> <span id="code"></span></p>
+      <p class="version">Android: <b>v<span id="ver">…</span></b> <span id="code"></span> · Windows: <b><span id="win-ver">…</span></b></p>
+      <p class="version"><a href="version.json">Android manifest</a> · <a href="windows-version.json">Windows manifest / SHA-256</a> · <a href="SHA256SUMS-windows.txt">Windows checksum</a></p>
     </header>
 
     <section class="features">
@@ -131,28 +134,28 @@
       </div>
       <div class="feature">
         <div class="ico">🛡️</div>
-        <h3>Ads &amp; popups blocked</h3>
-        <p>Network-level and structural blocking removes ads and the "confirm you're not a robot" gate.</p>
+        <h3>Native—not a wrapper</h3>
+        <p>Browse native screens. Hidden connections are used only for Movy account access and on-demand stream resolution.</p>
       </div>
       <div class="feature">
         <div class="ico">🎬</div>
         <h3>Full player control</h3>
-        <p>Pause, resume, quality, subtitles, and the episode drawer — all driven from the remote.</p>
+        <p>Source selection, quality, audio, CC, speed, audio/subtitle timing, and native playback controls.</p>
       </div>
       <div class="feature">
-        <div class="ico">📱</div>
-        <h3>Phones &amp; tablets</h3>
-        <p>Browse in portrait or landscape; playback rotates to landscape automatically.</p>
+        <div class="ico">🖥️</div>
+        <h3>Windows desktop preview</h3>
+        <p>A separate WPF app with embedded mpv playback, mouse/keyboard controls, and fullscreen. Extract the ZIP and run Movy.exe.</p>
       </div>
       <div class="feature">
         <div class="ico">🔄</div>
-        <h3>Automatic updates</h3>
-        <p>The app checks this page on launch and installs new versions itself — no store required.</p>
+        <h3>Keep your place</h3>
+        <p>Continue Watching combines selected Movy-profile activity with local progress. Local playback history is not synced between devices.</p>
       </div>
       <div class="feature">
         <div class="ico">⚡</div>
-        <h3>Fit-to-screen</h3>
-        <p>Scaled to fill the TV with no overflow, tuned for 1280×720 and up.</p>
+        <h3>Current Movy catalog</h3>
+        <p>Recommended collections, provider libraries, movies/series pagination, sorting, and genre filters. Streams resolve only after Play.</p>
       </div>
     </section>
 
@@ -161,15 +164,26 @@
       <ol>
         <li><b>Download the APK</b> onto the device (use the button above, or a sideload tool like Downloader with this page's URL).</li>
         <li><b>Allow installs from unknown sources</b> when prompted.</li>
-        <li><b>Open Movy TV.</b> From then on it updates itself whenever a new version is published here.</li>
+        <li><b>Open Movy TV.</b> The app checks version.json on launch and offers new signed updates.</li>
       </ol>
       <div class="note">
         Updates only install if the new APK is signed with the same key as the one already on your device. If you previously ran a build signed with a different key, uninstall it once before installing this one.
       </div>
     </section>
 
+    <section class="install" style="margin-top:24px">
+      <h2>Run on Windows 10/11 x64</h2>
+      <ol>
+        <li><b>Download and extract the whole ZIP.</b> Run <code>Movy.exe</code> in the extracted folder; keep the accompanying files.</li>
+        <li><b>WebView2 Runtime is required</b> for account access and stream resolution. If missing, install it from <a href="https://developer.microsoft.com/en-us/microsoft-edge/webview2/">Microsoft</a>. The .NET runtime is included.</li>
+        <li><b>First Play offers the official mpv download</b> (~39 MB). The app verifies a pinned SHA-256 checksum and caches the player locally.</li>
+        <li><b>Sign in separately on Windows.</b> Android credentials/local history do not transfer automatically. Space pauses, arrows seek, F11 toggles fullscreen, and Esc twice returns to the title.</li>
+      </ol>
+      <div class="note">Windows is an unsigned preview, not an installer. An unknown-publisher warning may appear; verify the expected download and checksum instead of disabling Windows security. Windows updates are manual: extract the new ZIP to a new folder. Real account/stream/video compatibility still needs device testing.</div>
+    </section>
+
     <footer>
-      <p>Movy TV is an unofficial client and is not affiliated with movy.sx. It streams no content itself.<br>
+      <p>Movy is an unofficial client, not affiliated with movy.sx or Plex. Catalog listings do not guarantee a playable stream.<br>
       Source &amp; releases on <a href="https://github.com/kerv/movy">GitHub</a>.</p>
     </footer>
   </div>
@@ -185,6 +199,10 @@
       .catch(function(){
         document.getElementById('ver').textContent = '—';
       });
+    fetch('windows-version.json?_=' + Date.now())
+      .then(function(r){ if(!r.ok) throw new Error('Unavailable'); return r.json(); })
+      .then(function(v){ document.getElementById('win-ver').textContent = 'v' + v.versionName + ' preview'; })
+      .catch(function(){ document.getElementById('win-ver').textContent = 'See releases'; });
   </script>
 </body>
 </html>

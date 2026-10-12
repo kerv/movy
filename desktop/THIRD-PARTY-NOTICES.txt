@@ -1,0 +1,23 @@
+Movy Desktop uses Microsoft .NET and Windows Presentation Foundation (MIT),
+and Microsoft's WebView2 SDK (Microsoft's WebView2 SDK license). Their runtime
+files and notices are included by the .NET SDK / NuGet publication process.
+https://github.com/dotnet/runtime/blob/main/LICENSE.TXT
+https://github.com/dotnet/wpf/blob/main/LICENSE.TXT
+https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.4258.31
+
+The Microsoft Edge WebView2 Evergreen Runtime is installed separately:
+https://developer.microsoft.com/en-us/microsoft-edge/webview2/
+
+mpv is NOT redistributed inside the Movy Windows ZIP. On first Play, with the
+user's permission, the app downloads the official mpv 0.41.0 Windows x64 MinGW
+build directly from the mpv project's GitHub Release, verifies its pinned
+SHA-256 checksum, and stores it in the user's local application-data directory.
+mpv is a separately licensed GPL/LGPL media player; see its upstream license,
+source code, release notes and build/dependency sources:
+https://github.com/mpv-player/mpv/releases/tag/v0.41.0
+https://github.com/mpv-player/mpv/tree/v0.41.0
+https://github.com/mpv-player/mpv/blob/v0.41.0/Copyright
+https://github.com/mpv-player/mpv/tree/v0.41.0/.github/workflows
+
+Movy is an unofficial client. No Plex software, assets, account or catalog is
+used. Movy and streaming-provider names belong to their respective owners.
