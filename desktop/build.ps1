@@ -11,6 +11,13 @@ New-Item -ItemType Directory -Path $distPath -Force | Out-Null
 if (Test-Path $publishPath) { Remove-Item -LiteralPath $publishPath -Recurse -Force }
 dotnet publish (Join-Path $PSScriptRoot "Movy.Desktop/Movy.Desktop.csproj") -c Release -r win-x64 --self-contained true -p:Version=$Version -p:PublishSingleFile=false -o $publishPath
 if ($LASTEXITCODE -ne 0) { throw "Windows publication failed" }
+# Missing notices are a packaging failure, not optional files to silently skip.
+foreach ($notice in @("DotNET-Runtime-LICENSE.txt", "WPF-Runtime-LICENSE.txt", "WebView2-LICENSE.txt", "WebView2-NOTICE.txt")) {
+    $noticePath = Join-Path $publishPath "ThirdParty/$notice"
+    if (!(Test-Path -LiteralPath $noticePath -PathType Leaf) -or (Get-Item -LiteralPath $noticePath).Length -eq 0) {
+        throw "Required Windows package notice is missing or empty: $notice"
+    }
+}
 Copy-Item (Join-Path $PSScriptRoot "README.md") (Join-Path $publishPath "README.windows.txt")
 $zipName = "movy-windows-v$Version-x64.zip"
 $zipPath = Join-Path $distPath $zipName

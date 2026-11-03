@@ -17,8 +17,20 @@
     <Content Include="$(NuGetPackageRoot)microsoft.web.webview2/1.0.4258.31/LICENSE.txt" Link="ThirdParty/WebView2-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="$(NuGetPackageRoot)microsoft.web.webview2/1.0.4258.31/NOTICE.txt" Link="ThirdParty/WebView2-NOTICE.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-  <ItemGroup Condition="'$(SelfContained)' == 'true' and '$(RuntimeIdentifier)' == 'win-x64'">
-    <Content Include="$(NuGetPackageRoot)microsoft.netcore.app.runtime.win-x64/10.0.12/LICENSE.TXT" Link="ThirdParty/DotNET-Runtime-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="$(NuGetPackageRoot)microsoft.windowsdesktop.app.runtime.win-x64/10.0.12/LICENSE" Link="ThirdParty/WPF-Runtime-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
+  <!-- Resolve the actual restored pack directories before Content target paths
+       are assigned. SDK patches change runtime versions and package locations. -->
+  <Target Name="IncludeMovyRuntimeNotices" BeforeTargets="AssignTargetPaths"
+          DependsOnTargets="ResolveFrameworkReferences"
+          Condition="'$(SelfContained)' == 'true' and '$(RuntimeIdentifier)' == 'win-x64' and '$(DesignTimeBuild)' != 'true'">
+    <ItemGroup>
+      <_MovyCoreRuntimePack Include="@(ResolvedRuntimePack)" Condition="'%(ResolvedRuntimePack.FrameworkName)' == 'Microsoft.NETCore.App'" />
+      <_MovyDesktopRuntimePack Include="@(ResolvedRuntimePack)" Condition="'%(ResolvedRuntimePack.FrameworkName)' == 'Microsoft.WindowsDesktop.App'" />
+    </ItemGroup>
+    <Error Condition="'@(_MovyCoreRuntimePack)' == '' or '@(_MovyDesktopRuntimePack)' == ''"
+           Text="Required runtime packs were not resolved; cannot include their license notices." />
+    <ItemGroup>
+      <Content Include="@(_MovyCoreRuntimePack->'%(PackageDirectory)/LICENSE.TXT')" Link="ThirdParty/DotNET-Runtime-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+      <Content Include="@(_MovyDesktopRuntimePack->'%(PackageDirectory)/LICENSE')" Link="ThirdParty/WPF-Runtime-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
 </Project>

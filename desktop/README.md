@@ -67,7 +67,9 @@ playback adapters are platform-specific; this is not a Java-to-C# transpilation.
 
 ## Build and test
 
-Install the .NET 10 SDK. From the repository root:
+Install the .NET SDK version specified in the repository's `global.json` (currently
+10.0.403). SDK selection is pinned rather than using a newer preinstalled SDK
+implicitly. From the repository root:
 
 ```powershell
 dotnet run --project desktop/Movy.Core.Tests -c Release
@@ -75,7 +77,10 @@ pwsh -File desktop/build.ps1
 ```
 
 Output: `desktop/dist/win-x64/Movy.exe` and a versioned Windows ZIP. The build is
-self-contained, x64, and unsigned. Linux can cross-publish the same Windows target:
+self-contained, x64, and unsigned. Runtime license notices come from MSBuild's
+resolved runtime-pack directories, not a hardcoded runtime patch. The packaging
+script requires all four runtime/SDK notices before creating a ZIP. Linux can
+cross-publish the same Windows target:
 
 ```bash
 dotnet run --project desktop/Movy.Core.Tests -c Release

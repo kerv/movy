@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   android:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
@@ -26,8 +26,24 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
         with:
           packages: platform-tools platforms;android-34 build-tools;34.0.0
       - name: Android tests, lint, and debug build
         run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon
+
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Show selected .NET SDK
+        run: dotnet --info
+      - name: Desktop core regression tests
+        run: dotnet run --project desktop/Movy.Core.Tests -c Release
+      - name: Windows publish and license packaging check
+        shell: pwsh
+        run: ./desktop/build.ps1

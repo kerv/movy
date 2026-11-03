@@ -243,6 +243,13 @@ creates a combined release. `windows-version.json` includes the desktop ZIP's
 SHA-256 and preview/signing flags; Android's `version.json` remains its existing
 APK-only update contract.
 
+CI uses explicit Ubuntu 24.04 / Windows Server 2025 runner images, and the .NET
+SDK version is selected by the root `global.json`. Update that file deliberately
+when upgrading the SDK. Desktop runtime notices are resolved from the restored
+runtime packs rather than a hardcoded patch directory. PR validation includes
+Windows publication/license checks as well as Android/browser regressions; the
+release workflow additionally runs the native Windows smoke test.
+
 CI uses the existing `MOVY_KEYSTORE_BASE64`, `MOVY_KEYSTORE_PASSWORD`,
 `MOVY_KEY_ALIAS`, and `MOVY_KEY_PASSWORD` secrets. Never replace the signing key.
 Local release builds without a configured keystore fall back to a debug key and

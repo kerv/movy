@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       code: ${{ steps.ver.outputs.code }}
       name: ${{ steps.ver.outputs.name }}
@@ -118,7 +118,7 @@ jobs:
           retention-days: 7
 
   windows:
-    runs-on: windows-latest
+    runs-on: windows-2025
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -126,7 +126,9 @@ jobs:
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.401'
+          global-json-file: global.json
+      - name: Show selected .NET SDK
+        run: dotnet --info
       - name: Desktop core and shared-contract checks
         run: dotnet run --project desktop/Movy.Core.Tests -c Release
       - name: Publish portable Windows x64 package
@@ -171,7 +173,7 @@ jobs:
 
   site:
     needs: [build, windows]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Download Android site
         uses: actions/download-artifact@v4
@@ -195,7 +197,7 @@ jobs:
 
   deploy:
     needs: site
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -206,7 +208,7 @@ jobs:
 
   release:
     needs: [build, windows]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
