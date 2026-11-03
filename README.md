@@ -119,6 +119,29 @@ features, shortcuts, prerequisites, build instructions, and known boundaries.
   original audio do not invent extra language choices.
 - Native launcher checks `https://kerv.github.io/movy/version.json` for updates.
 
+Android playback settings also include **Default video quality**, saved on the
+device for future playback: Auto (the default), prefer up to 720p, prefer up to
+1080p, or highest available. Auto leaves the site's initial rendition alone and
+lets Media3 adapt when the supplied playlist supports it. A cap prefers the best
+advertised source at or below the requested height, or the lowest advertised
+source when none fit; it cannot create a missing rendition. The current title's
+Quality control remains a per-playback override. Windows retains its existing
+highest-rendition behavior.
+
+The player's Next episode action uses the same actual episode metadata as
+Continue Watching and waits for a valid, released air date. When a completed
+series has no announced next episode, local metadata checks become eligible
+again after six hours on a subsequent Home visit. Removing it from Continue
+Watching or watching another episode clears that pending lookup.
+
+Android update downloads require the exact publisher HTTPS APK URL (without
+redirects), a SHA-256 supplied by the published manifest, a maximum 64 MiB size,
+and a newer APK with the installed package ID and signing certificate. Android's
+installer remains the final signature verifier and requires user confirmation.
+CI adds the APK digest to the deployed `version.json` after building. Manually
+hosted manifests must include `sha256`; missing/invalid digests fail closed.
+Signing-key rotation is intentionally rejected by this conservative preflight.
+
 Catalogue, genre, discovery, and episode requests use Movy's existing metadata
 service (`db.wecollege.net`); Home uses Movy's server-rendered catalogue. A
 metadata listing does not guarantee a playable stream: resolution remains on

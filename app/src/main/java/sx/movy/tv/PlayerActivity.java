@@ -47,6 +47,7 @@ public class PlayerActivity extends android.app.Activity {
     private final PlaybackExitGuard exitGuard=new PlaybackExitGuard();
     private Toast exitHint;
     private boolean backKeyDown;
+    private boolean checkingNextEpisode;
     @Override public void onCreate(Bundle state){
         super.onCreate(state);store=new PlaybackStore(this);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
@@ -67,13 +68,31 @@ public class PlayerActivity extends android.app.Activity {
             playbackError();
         }@Override public void onTracksChanged(Tracks tracks){applyPendingSubtitle(tracks);view.post(PlayerActivity.this::enableCaptionButton);}@Override public void onPlaybackStateChanged(int state){if(state==Player.STATE_ENDED)save();view.post(PlayerActivity.this::enableCaptionButton);}});
         long position=state!=null?state.getLong("position"):getIntent().getLongExtra("position",0);if(position>0)player.seekTo(position);
-        prepare(stream,headers,position);view.requestFocus();timer.postDelayed(checkpoint,10000);
+        applyQuality();
+        PlaybackTracks.Source preferred=PlaybackQuality.source(available.sources,PlaybackQuality.get(this));
+        prepare(preferred==null?stream:Uri.parse(preferred.url),headers,position);view.requestFocus();timer.postDelayed(checkpoint,10000);
         if(available.subtitles.isEmpty())discoverCaptions(false);else captionLookupFinished=true;
     }
     private void settings(){
-        List<String> labels=new ArrayList<>(Arrays.asList("Playback source","Audio language","Subtitles / closed captions","Quality","Playback speed","Audio sync · "+offset(timing.audioMs()),"Subtitle sync · "+offset(timing.subtitleMs())));
+        List<String> labels=new ArrayList<>(Arrays.asList("Playback source","Audio language","Subtitles / closed captions","Quality","Playback speed","Audio sync · "+offset(timing.audioMs()),"Subtitle sync · "+offset(timing.subtitleMs()),"Default video quality"));
         String key=getIntent().getStringExtra("key");if(key!=null&&key.startsWith("/tv/"))labels.add("Next episode");
-        new AlertDialog.Builder(this).setTitle("Playback settings").setItems(labels.toArray(new String[0]),(d,w)->{switch(w){case 0:sources();break;case 1:tracks(C.TRACK_TYPE_AUDIO);break;case 2:tracks(C.TRACK_TYPE_TEXT);break;case 3:tracks(C.TRACK_TYPE_VIDEO);break;case 4:speed();break;case 5:sync(false);break;case 6:sync(true);break;case 7:nextEpisode();break;}}).setNegativeButton("Close",null).show();
+        new AlertDialog.Builder(this).setTitle("Playback settings").setItems(labels.toArray(new String[0]),(d,w)->{switch(w){case 0:sources();break;case 1:tracks(C.TRACK_TYPE_AUDIO);break;case 2:tracks(C.TRACK_TYPE_TEXT);break;case 3:tracks(C.TRACK_TYPE_VIDEO);break;case 4:speed();break;case 5:sync(false);break;case 6:sync(true);break;case 7:defaultQuality();break;case 8:nextEpisode();break;}}).setNegativeButton("Close",null).show();
+    }
+    private void defaultQuality(){
+        int current=PlaybackQuality.get(this),checked=0;
+        for(int i=0;i<PlaybackQuality.VALUES.length;i++)if(PlaybackQuality.VALUES[i]==current)checked=i;
+        new AlertDialog.Builder(this).setTitle("Default video quality")
+                .setSingleChoiceItems(PlaybackQuality.LABELS,checked,(dialog,index)->{
+                    PlaybackQuality.set(this,PlaybackQuality.VALUES[index]);dialog.dismiss();
+                    Toast.makeText(this,"Saved for future playback",Toast.LENGTH_SHORT).show();
+                }).setNegativeButton("Cancel",null).show();
+    }
+    private void applyQuality(){
+        int preference=PlaybackQuality.get(this);
+        TrackSelectionParameters.Builder selection=player.getTrackSelectionParameters().buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_VIDEO).setMaxVideoSize(Integer.MAX_VALUE,preference>0?preference:Integer.MAX_VALUE)
+                .setForceHighestSupportedBitrate(preference==PlaybackQuality.HIGHEST);
+        player.setTrackSelectionParameters(selection.build());
     }
     private static String offset(int value){return String.format(java.util.Locale.US,"%+.2f s",value/1000f);}
     private void sync(boolean subtitles){
@@ -90,7 +109,26 @@ public class PlayerActivity extends android.app.Activity {
         new AlertDialog.Builder(this).setTitle(subtitles?"Subtitle timing":"Audio timing").setView(box).setPositiveButton("Done",null).show();
     }
     private void speed(){String[] labels={"0.75×","Normal","1.25×","1.5×","2×"};float[] rates={.75f,1f,1.25f,1.5f,2f};new AlertDialog.Builder(this).setTitle("Playback speed").setItems(labels,(d,w)->player.setPlaybackSpeed(rates[w])).show();}
-    private void nextEpisode(){String[] parts=getIntent().getStringExtra("key").split("/");try{int s=Integer.parseInt(parts[3]),e=Integer.parseInt(parts[4]);setResult(RESULT_OK,new android.content.Intent().putExtra("season",s).putExtra("episode",e+1));finish();}catch(Exception ignored){}}
+    private void nextEpisode(){
+        String key=getIntent().getStringExtra("key");
+        if(key==null||checkingNextEpisode)return;
+        checkingNextEpisode=true;
+        try{
+            CatalogClient.Title title=new CatalogClient.Title(new org.json.JSONObject()
+                    .put("id",Long.parseLong(key.split("/")[2])).put("slug",key));
+            NextEpisodeFinder.find(title,(next,error)->{
+                checkingNextEpisode=false;
+                if(isFinishing()||isDestroyed())return;
+                if(error!=null){Toast.makeText(this,"Couldn’t check the next episode. Please try again.",Toast.LENGTH_LONG).show();return;}
+                if(next==null||!next.released()){
+                    Toast.makeText(this,"No next episode has been released yet.",Toast.LENGTH_LONG).show();return;
+                }
+                String[] parts=next.key.split("/");
+                setResult(RESULT_OK,new android.content.Intent().putExtra("season",Integer.parseInt(parts[3]))
+                        .putExtra("episode",Integer.parseInt(parts[4])));finish();
+            });
+        }catch(Exception ignored){checkingNextEpisode=false;}
+    }
     private void prepare(Uri stream,HashMap<String,String> headers,long position){
         requestHeaders=headers;currentUrl=stream.toString();
         DefaultHttpDataSource.Factory http=new DefaultHttpDataSource.Factory().setDefaultRequestProperties(headers).setConnectTimeoutMs(15000).setReadTimeoutMs(20000);

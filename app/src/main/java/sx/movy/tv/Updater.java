@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.net.Uri;
 import android.os.Build;
@@ -25,6 +26,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.security.MessageDigest;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -67,6 +69,8 @@ public class Updater {
     private PromptCallback callback;
     private File pendingApk;
     private String pendingDownloadUrl;
+    private String pendingHash;
+    private int pendingVersion;
     private boolean installLaunched;
     private boolean foreground = true;
 
@@ -99,7 +103,7 @@ public class Updater {
         String url = pendingDownloadUrl;
         if (url != null && callback != null && canInstallPackages(activity)) {
             pendingDownloadUrl = null;
-            downloadAndInstall(activity, url, callback);
+            downloadAndInstall(activity, url, pendingHash, pendingVersion, callback);
         }
     }
 
@@ -121,13 +125,14 @@ public class Updater {
                 final String remoteName = manifest.optString("versionName", "");
                 final String apkUrl = manifest.optString("apkUrl", DEFAULT_APK_URL);
                 final String notes = manifest.optString("notes", "");
+                final String sha256 = manifest.optString("sha256", "");
                 final int localCode = installedVersionCode(activity);
 
                 Log.i(TAG, "local=" + localCode + " remote=" + remoteCode + " url=" + apkUrl);
 
-                if (remoteCode > localCode && apkUrl != null && apkUrl.startsWith("http")) {
+                if (remoteCode > localCode && UpdatePolicy.allowedUrl(apkUrl) && UpdatePolicy.validHash(sha256)) {
                     main.post(() -> cb.onUpdateAvailable(remoteName, notes,
-                            () -> downloadAndInstall(activity, apkUrl, cb)));
+                            () -> downloadAndInstall(activity, apkUrl, sha256, remoteCode, cb)));
                 }
             } catch (Exception e) {
                 Log.w(TAG, "update check failed", e);
@@ -143,7 +148,7 @@ public class Updater {
             c = (HttpURLConnection) url.openConnection();
             c.setConnectTimeout(CONNECT_TIMEOUT_MS);
             c.setReadTimeout(READ_TIMEOUT_MS);
-            c.setInstanceFollowRedirects(true);
+            c.setInstanceFollowRedirects(false);
             c.setRequestProperty("Cache-Control", "no-cache");
             int code = c.getResponseCode();
             if (code != 200) {
@@ -174,14 +179,19 @@ public class Updater {
                 || activity.getPackageManager().canRequestPackageInstalls();
     }
 
-    private void downloadAndInstall(final Activity activity, final String apkUrl,
+    private void downloadAndInstall(final Activity activity, final String apkUrl, final String sha256, final int version,
                                     final PromptCallback cb) {
+        if(!UpdatePolicy.allowedUrl(apkUrl)||!UpdatePolicy.validHash(sha256)){
+            cb.onError("Untrusted update metadata");return;
+        }
         callback = cb;
         // On Android 8+ the app needs permission to install unknown apps.
         if (!canInstallPackages(activity)) {
             // Resume the download automatically once the grant is given, rather
             // than losing the update because the prompt is gone on return.
             pendingDownloadUrl = apkUrl;
+            pendingHash = sha256;
+            pendingVersion = version;
             try {
                 Toast.makeText(activity,
                         "Allow Movy TV to install updates. The update continues when you come back.",
@@ -197,12 +207,13 @@ public class Updater {
 
         io.execute(() -> {
             HttpURLConnection c = null;
+            File out = null;
             try {
                 File dir = new File(activity.getCacheDir(), "updates");
                 if (!dir.exists() && !dir.mkdirs()) {
                     Log.w(TAG, "cannot create update dir");
                 }
-                File out = new File(dir, "movy-update.apk");
+                out = new File(dir, "movy-update.apk");
                 if (out.exists() && !out.delete()) {
                     Log.w(TAG, "cannot delete stale apk");
                 }
@@ -211,22 +222,32 @@ public class Updater {
                 c = (HttpURLConnection) url.openConnection();
                 c.setConnectTimeout(CONNECT_TIMEOUT_MS);
                 c.setReadTimeout(READ_TIMEOUT_MS);
-                c.setInstanceFollowRedirects(true);
+                c.setInstanceFollowRedirects(false);
                 int code = c.getResponseCode();
                 if (code != 200) {
                     Log.w(TAG, "apk HTTP " + code);
                     main.post(() -> cb.onError("Download failed (" + code + ")"));
                     return;
                 }
+                MessageDigest digest=MessageDigest.getInstance("SHA-256");
+                long size=0;
                 try (InputStream in = c.getInputStream();
                      OutputStream os = new FileOutputStream(out)) {
                     byte[] buf = new byte[16 * 1024];
                     int n;
                     while ((n = in.read(buf)) != -1) {
+                        size+=n;
+                        if(size>UpdatePolicy.MAX_APK_BYTES)throw new SecurityException("Update exceeds size limit");
+                        digest.update(buf,0,n);
                         os.write(buf, 0, n);
                     }
                     os.flush();
                 }
+
+                StringBuilder actual=new StringBuilder();
+                for(byte value:digest.digest())actual.append(String.format(java.util.Locale.US,"%02x",value&255));
+                if(!sha256.equalsIgnoreCase(actual.toString()))throw new SecurityException("Update checksum mismatch");
+                verifyPackage(activity,out,version);
 
                 final File ready = out;
                 // Starting the installer is an activity start: it must happen on
@@ -238,6 +259,7 @@ public class Updater {
                     launchPendingInstall(activity);
                 });
             } catch (Exception e) {
+                if(out!=null&&out.exists())out.delete();
                 Log.w(TAG, "download error", e);
                 main.post(() -> cb.onError(e.getMessage()));
             } finally {
@@ -246,6 +268,15 @@ public class Updater {
                 }
             }
         });
+    }
+
+    @SuppressWarnings("deprecation")
+    private void verifyPackage(Activity activity,File apk,int expectedVersion) throws Exception {
+        PackageManager pm=activity.getPackageManager();
+        PackageInfo installed=pm.getPackageInfo(activity.getPackageName(),PackageManager.GET_SIGNATURES);
+        PackageInfo update=pm.getPackageArchiveInfo(apk.getAbsolutePath(),PackageManager.GET_SIGNATURES);
+        if(!UpdatePolicy.matchesInstalled(installed,update)||update.versionCode!=expectedVersion)
+            throw new SecurityException("Update package, version, or signing certificate mismatch");
     }
 
     private void launchPendingInstall(final Activity activity) {

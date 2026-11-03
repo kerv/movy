@@ -28,6 +28,7 @@ final class StreamResolver {
     private String candidate, pageUrl;
     private HashMap<String,String> candidateHeaders;
     private int bestHeight;
+    private int qualityPreference;
     private boolean closed;
     private String tracks = "{}";
     private boolean readingTracks;
@@ -42,6 +43,7 @@ final class StreamResolver {
     }
     @SuppressLint("SetJavaScriptEnabled") void start(String pageUrl,String preferredServer,Callback callback) {
         this.preferredServer=preferredServer==null?"":preferredServer;
+        qualityPreference=PlaybackQuality.get(activity);
         this.pageUrl=pageUrl; this.callback=callback;
         browser = new WebView(activity);
         WebSettings settings=browser.getSettings(); settings.setJavaScriptEnabled(true); settings.setDomStorageEnabled(true);
@@ -101,7 +103,7 @@ final class StreamResolver {
         if(closed||readingTracks)return;
         java.util.regex.Matcher match=java.util.regex.Pattern.compile("(?:s|[-_/])(\\d{3,4})p",java.util.regex.Pattern.CASE_INSENSITIVE).matcher(url);
         int height=match.find()?Integer.parseInt(match.group(1)):0;
-        if(candidate==null || height>=bestHeight){candidate=url;candidateHeaders=headers;bestHeight=height;}
+        if(candidate==null || PlaybackQuality.better(height,bestHeight,qualityPreference)){candidate=url;candidateHeaders=headers;bestHeight=height;}
         callback.progress(height>=2160?"Preparing your stream in 4K…":"Preparing your stream…");
         handler.removeCallbacks(finish);handler.postDelayed(finish,2500);
     }
@@ -131,5 +133,5 @@ final class StreamResolver {
     private void fail(String message){if(closed)return;Callback done=callback;close();done.failed(message);}
     void close(){closed=true;handler.removeCallbacksAndMessages(null);if(browser!=null){browser.stopLoading();parent.removeView(browser);browser.destroy();browser=null;}}
     static boolean site(Uri uri){String h=uri.getHost();return "https".equals(uri.getScheme())&&h!=null&&(h.equals("movy.sx")||h.endsWith(".movy.sx"));}
-    private String script(){StringBuilder b=new StringBuilder("window.__movyNativeRequestedServer=").append(org.json.JSONObject.quote(preferredServer)).append(';');try(BufferedReader r=new BufferedReader(new InputStreamReader(activity.getAssets().open("native_resolver.js")))){String l;while((l=r.readLine())!=null)b.append(l).append('\n');}catch(Exception ignored){}return b.toString();}
+    private String script(){StringBuilder b=new StringBuilder("window.__movyNativeQuality=").append(qualityPreference).append(";window.__movyNativeRequestedServer=").append(org.json.JSONObject.quote(preferredServer)).append(';');try(BufferedReader r=new BufferedReader(new InputStreamReader(activity.getAssets().open("native_resolver.js")))){String l;while((l=r.readLine())!=null)b.append(l).append('\n');}catch(Exception ignored){}return b.toString();}
 }

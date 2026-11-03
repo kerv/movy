@@ -81,12 +81,23 @@
       return; // Never silently use the default when the requested server is absent.
     }
     var options = Array.from(shell.querySelectorAll('button, [role="menuitemradio"], [role="option"]'));
-    var best = null, height = chosen;
+    // Android supplies a saved preference. Other clients keep their legacy
+    // highest-quality behavior when this setting is absent. Auto leaves the
+    // website's adaptive/default rendition alone.
+    var preference = typeof window.__movyNativeQuality === 'number' ? window.__movyNativeQuality : -1;
+    if (preference === 0) return;
+    var best = null, height = 0;
     options.forEach(function (button) {
       var match = (button.textContent || '').trim().match(/^(\d{3,4})p(?:\s|$|HD|Full)/i);
-      if (match && +match[1] > height) { best = button; height = +match[1]; }
+      if (!match) return;
+      var value = +match[1];
+      var fits = preference < 0 || value <= preference;
+      var bestFits = preference < 0 || height <= preference;
+      if (!best || (fits && !bestFits) || (fits === bestFits && (fits ? value > height : value < height))) {
+        best = button; height = value;
+      }
     });
-    if (best) { chosen = height; best.click(); }
+    if (best && height !== chosen) { chosen = height; best.click(); }
     // Never click a catalogue/trailer Play button. ?play=true opens the
     // real watch shell after React hydration; the browser handles resolution.
   }, 400);
