@@ -22,6 +22,10 @@ GitHub Releases and the download page; Android keeps its stable signed updater.
 - Both builds test `shared/fixtures/catalog.json`; browser fixtures test the same
   adapters, including Android/Windows device-name configuration. UI, platform
   storage, and Media3/mpv playback remain platform-specific.
+- Artwork URL cases are shared in `shared/fixtures/artwork-urls.json`. Both apps
+  resolve root/document-relative and protocol-relative HTTPS artwork against
+  Movy's origin, including when loading older saved entries and raw detail images.
+  Existing `/img/.../q50.webp` route suffixes are preserved, not renamed.
 
 The behaviors below describe Android. See the desktop README for Windows preview
 features, shortcuts, prerequisites, build instructions, and known boundaries.

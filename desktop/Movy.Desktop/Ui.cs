@@ -20,13 +20,15 @@ internal static class Ui
     public static void Fade(FrameworkElement view) => view.BeginAnimation(UIElement.OpacityProperty,new DoubleAnimation(0,1,TimeSpan.FromMilliseconds(240)) { EasingFunction=new QuadraticEase { EasingMode=EasingMode.EaseOut } });
     private static readonly HttpClient Images = new() { Timeout=TimeSpan.FromSeconds(15) };
     private static readonly SemaphoreSlim ImageGate = new(6);
-    public static Image Artwork(string url, double width, double height, bool backdrop=false)
+    public static Image Artwork(string url, double width, double height, bool backdrop=false, HttpClient? client=null)
     {
         var image=new Image { Width=width, Height=height, Stretch=Stretch.UniformToFill, HorizontalAlignment=HorizontalAlignment.Left };
-        if(!Movy.Core.Security.Https(url))return image;
+        // Normalize before checking the scheme, including legacy saved titles
+        // and raw detail artwork that did not pass through Title.From.
+        string address=Movy.Core.Security.Image(url);if(address.Length==0)return image;
         bool loading=false; image.Loaded+=async(_,_)=>{
             if(loading||image.Source!=null)return;loading=true;
-            try { await ImageGate.WaitAsync(); try { using var response=await Images.GetAsync(Movy.Core.Security.Image(url),HttpCompletionOption.ResponseHeadersRead);response.EnsureSuccessStatusCode();
+            try { await ImageGate.WaitAsync(); try { using var response=await (client??Images).GetAsync(address,HttpCompletionOption.ResponseHeadersRead);response.EnsureSuccessStatusCode();
                 await using var input=await response.Content.ReadAsStreamAsync();using var bytes=new MemoryStream();byte[] buffer=new byte[65536];int read;while((read=await input.ReadAsync(buffer))>0){if(bytes.Length+read>8*1024*1024)throw new InvalidDataException();bytes.Write(buffer,0,read);}bytes.Position=0;
                 var bitmap=new BitmapImage();bitmap.BeginInit();bitmap.CacheOption=BitmapCacheOption.OnLoad;bitmap.DecodePixelWidth=backdrop?1280:300;bitmap.StreamSource=bytes;bitmap.EndInit();bitmap.Freeze();image.Source=bitmap;Fade(image);
             } finally { ImageGate.Release(); } } catch { /* Artwork is optional; names remain visible. */ } finally { loading=false; }

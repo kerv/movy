@@ -5,6 +5,10 @@ using Movy.Core;
 static void Check(bool condition,string label){if(!condition)throw new Exception(label);Console.WriteLine("PASS "+label);}
 using var fixture=JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"Fixtures","catalog.json")));
 var rows=Catalog.Rows(fixture.RootElement);Check(rows.Count==2&&rows[0].Titles.Count==2&&rows[1].Name=="Popular on Netflix","shared Movy home fixture parsed into named native rails");
+Check(rows[0].Titles[0].Poster==MovyConfig.Site+"/img/w342/poster.jpg/q50.webp"&&rows[0].Titles[0].Backdrop==MovyConfig.Site+"/img/w780/backdrop.jpg/q65.webp","home artwork resolves relative poster and backdrop routes");
+using(var artwork=JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"Fixtures","artwork-urls.json")))){
+    foreach(var item in artwork.RootElement.EnumerateArray()){string result=Security.Image(item.Get("input").ValueKind==JsonValueKind.Null?null:item.Text("input"));Check(result==item.Text("windows")&&Security.Image(result)==result,"shared artwork contract: "+item.Text("name"));}
+}
 var extracted=Catalog.NextData("<html><script id='__NEXT_DATA__' type='application/json'>"+fixture.RootElement.GetRawText()+"</script></html>");Check(Catalog.Rows(extracted).Count==2,"SSR next-data parser accepts attribute ordering and quotes");
 Check(Provider.All.Length==7&&Provider.All.Single(p=>p.Name=="Disney+").WatchId==337&&MovyConfig.Site=="https://www.movy.sx","providers and backend mappings load from shared configuration");
 string url=Catalog.LibraryUrl("tv",Provider.All[3],18,Sort.Alphabetical,2,"2026-10-12");Check(url.Contains("with_networks=2739")&&url.Contains("with_genres=18")&&url.Contains("original_name.asc")&&url.Contains("first_air_date.lte=2026-10-12")&&url.Contains("page=2"),"series library filters, sorting, pagination and released-date constraints");
@@ -28,6 +32,12 @@ try {
 } finally {Directory.Delete(directory,true);}
 var catalog=new Catalog(new HttpClient(new FixtureHandler()));var after=new Title(1,"/tv/1/1/10","Series");var candidate=await catalog.NextEpisode(after);Check(candidate?.Slug=="/tv/1/2/1"&&candidate.NextEpisode,"next episode validates actual metadata and crosses season boundaries");
 Console.WriteLine("Desktop core checks completed.");
+
+if(args.Contains("--live-artwork")){
+    var live=await new Catalog().Home();var images=live.SelectMany(r=>r.Titles).SelectMany(t=>new[]{t.Poster,t.Backdrop}).Where(u=>u.StartsWith(MovyConfig.Site+"/img/",StringComparison.Ordinal)).Distinct().Take(2).ToArray();
+    Check(images.Length==2,"live catalog exposes normalized Movy image routes");using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(20)};
+    foreach(string image in images){using var response=await http.GetAsync(image);response.EnsureSuccessStatusCode();byte[] bytes=await response.Content.ReadAsByteArrayAsync();Check(response.Content.Headers.ContentType?.MediaType?.StartsWith("image/",StringComparison.Ordinal)==true&&bytes.Length>8&&(bytes[0]==255&&bytes[1]==216||bytes.AsSpan(0,8).SequenceEqual(new byte[]{137,80,78,71,13,10,26,10})),"live Movy artwork returns a JPEG/PNG image body");}
+}
 
 sealed class FixtureHandler:HttpMessageHandler
 {

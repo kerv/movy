@@ -50,8 +50,8 @@ final class CatalogClient {
             availableOn=item.optString("availableOn");
             title = item.optString("title", item.optString("name", "Untitled"));
             slug = item.optString("slug", "/" + item.optString("mediaType", "movie") + "/" + id);
-            poster = item.optString("poster", item.optString("image"));
-            backdrop = item.optString("image", item.optString("background", poster));
+            poster = ArtworkUrls.normalize(item.optString("poster", item.optString("image")));
+            backdrop = ArtworkUrls.normalize(item.optString("image", item.optString("background", poster)));
             String date = item.optString("release_date", item.optString("first_air_date", ""));
             year = date.length() >= 4 ? date.substring(0, 4) : "";
             rating = item.has("rating") ? String.format(java.util.Locale.US,"%.1f",item.optDouble("rating",0)) : "";
@@ -286,15 +286,18 @@ final class CatalogClient {
         } finally { c.disconnect(); }
     }
     static void image(final String url, final Result<Bitmap> callback) {
-        if (url == null || url.isEmpty()) return;
-        Bitmap cached=IMAGES.get(url);if(cached!=null){callback.accept(cached,null);return;}
+        // Also normalize here: details/cast and older saved entries may bypass
+        // Title parsing, and their stored relative paths must keep working.
+        final String address=ArtworkUrls.normalize(url);
+        if(address.isEmpty()){MAIN.post(()->callback.accept(null,new IllegalArgumentException("Invalid artwork address")));return;}
+        Bitmap cached=IMAGES.get(address);if(cached!=null){callback.accept(cached,null);return;}
         IMAGE_IO.execute(() -> {
             HttpURLConnection connection=null;
             try {
-                String sized=url.replace("%2Foriginal%2F", "%2Fw1280%2F");
+                String sized=address.replace("%2Foriginal%2F", "%2Fw1280%2F");
                 connection=(HttpURLConnection)new URL(sized).openConnection();connection.setConnectTimeout(10000);connection.setReadTimeout(15000);
                 Bitmap b;try(InputStream in=connection.getInputStream()){b=BitmapFactory.decodeStream(in);}
-                if(b!=null)IMAGES.put(url,b);MAIN.post(()->callback.accept(b,null));
+                if(b!=null)IMAGES.put(address,b);MAIN.post(()->callback.accept(b,null));
             } catch (Exception e) { MAIN.post(() -> callback.accept(null, e)); }
             finally {if(connection!=null)connection.disconnect();}
         });

@@ -1,7 +1,7 @@
 {
   "props": { "pageProps": { "sections": [
     { "name": "popularMovies", "movies": [
-      { "id": 603, "slug": "/movie/603", "title": "The Matrix", "release_date": "1999-03-31", "rating": 8.2 },
+      { "id": 603, "slug": "/movie/603", "title": "The Matrix", "release_date": "1999-03-31", "rating": 8.2, "poster": "/img/w342/poster.jpg/q50.webp", "image": "/img/w780/backdrop.jpg/q65.webp" },
       { "id": 550, "slug": "/movie/550", "title": "Fight Club", "release_date": "1999-10-15", "rating": 8.4 }
     ] },
     { "name": "netflix", "movies": [

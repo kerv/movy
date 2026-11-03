@@ -1,0 +1,17 @@
+[
+  { "name": "root-relative Movy poster", "input": "/img/w342/poster.jpg/q50.webp", "android": "https://www.movy.sx/img/w342/poster.jpg/q50.webp", "windows": "https://www.movy.sx/img/w342/poster.jpg/q50.webp" },
+  { "name": "root-relative Movy backdrop", "input": "/img/w780/backdrop.jpg/q65.webp", "android": "https://www.movy.sx/img/w780/backdrop.jpg/q65.webp", "windows": "https://www.movy.sx/img/w780/backdrop.jpg/q65.webp" },
+  { "name": "document-relative image", "input": "img/w342/poster.jpg/q50.webp", "android": "https://www.movy.sx/img/w342/poster.jpg/q50.webp", "windows": "https://www.movy.sx/img/w342/poster.jpg/q50.webp" },
+  { "name": "absolute Movy route unchanged", "input": "https://www.movy.sx/img/w342/poster.jpg/q50.webp", "android": "https://www.movy.sx/img/w342/poster.jpg/q50.webp", "windows": "https://www.movy.sx/img/w342/poster.jpg/q50.webp" },
+  { "name": "direct metadata artwork unchanged", "input": "https://image.tmdb.org/t/p/w342/poster.jpg", "android": "https://image.tmdb.org/t/p/w342/poster.jpg", "windows": "https://image.tmdb.org/t/p/w342/poster.jpg" },
+  { "name": "protocol-relative HTTPS image", "input": "//image.tmdb.org/t/p/w342/poster.jpg", "android": "https://image.tmdb.org/t/p/w342/poster.jpg", "windows": "https://image.tmdb.org/t/p/w342/poster.jpg" },
+  { "name": "legacy proxy preserves native formats", "input": "https://wsrv.nl/?url=https%3A%2F%2Fimage.tmdb.org%2Ft%2Fp%2Fw342%2Fposter.jpg&output=webp&q=55", "android": "https://wsrv.nl/?url=https%3A%2F%2Fimage.tmdb.org%2Ft%2Fp%2Fw342%2Fposter.jpg&output=webp&q=55", "windows": "https://wsrv.nl/?url=https%3A%2F%2Fimage.tmdb.org%2Ft%2Fp%2Fw342%2Fposter.jpg&output=jpg&q=55" },
+  { "name": "empty", "input": "", "android": "", "windows": "" },
+  { "name": "null", "input": null, "android": "", "windows": "" },
+  { "name": "insecure scheme", "input": "http://images.example/poster.jpg", "android": "", "windows": "" },
+  { "name": "script scheme", "input": "javascript:alert(1)", "android": "", "windows": "" },
+  { "name": "file scheme", "input": "file:///poster.jpg", "android": "", "windows": "" },
+  { "name": "embedded credentials", "input": "https://user:password@images.example/poster.jpg", "android": "", "windows": "" },
+  { "name": "backslash URL ambiguity", "input": "/img\\poster.jpg", "android": "", "windows": "" },
+  { "name": "embedded control characters", "input": "/img/poster\r\n.jpg", "android": "", "windows": "" }
+]

@@ -1,6 +1,6 @@
 {
-  "versionCode": 24,
-  "versionName": "1.23",
+  "versionCode": 25,
+  "versionName": "1.24",
   "apkUrl": "https://kerv.github.io/movy/movy.apk",
-  "notes": "Includes the merged Android TV improvements: saved default video quality preferences, metadata-validated Next episode, retryable up-next lookups, and stricter update verification of the published SHA-256, package ID, newer version and signing certificate. Fixes CI after hosted runner/SDK updates: supported runner images and an explicitly selected .NET SDK, runtime license notices resolved from the actual restored packs, and Windows publication checks on pull requests. Windows remains an unsigned portable x64 preview with native UI/mpv playback; WebView2 Runtime is required and first Play offers a checksum-verified player download. Android and Windows still share their Movy account/resolver scripts and provider configuration."
+  "notes": "Fixes missing artwork after Movy switched catalog images to relative /img/... paths. Android and Windows now resolve artwork against Movy's HTTPS origin when parsing titles and when loading images, covering Home, Recommended, details, cast artwork and older saved/Continue Watching entries without clearing history or My List. Movy's image-route suffixes and existing absolute image URLs are preserved; Windows retains its JPEG output setting for legacy proxy URLs. Both apps test the same URL-contract fixtures, and Windows smoke checks exercise a relative artwork HTTP request and native bitmap decoding. Existing playback, account connections, quality preferences and update safety remain unchanged."
 }

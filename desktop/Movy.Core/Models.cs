@@ -16,7 +16,15 @@ public static class Security
     public static bool Https(string address) => Uri.TryCreate(address, UriKind.Absolute, out var uri) && uri.Scheme == "https" && string.IsNullOrEmpty(uri.UserInfo);
     public static bool Site(string address) => Https(address) && new Uri(address).Host is "movy.sx" or "www.movy.sx";
     public static string RootKey(string path) => TitlePath(path) ? string.Join('/', path.Split('/').Take(3)) : "";
-    public static string Image(string address) => Https(address) ? address.Replace("output=webp", "output=jpg", StringComparison.OrdinalIgnoreCase) : "";
+    public static string Image(string? address)
+    {
+        if(string.IsNullOrWhiteSpace(address))return "";
+        string value=address.Trim();
+        if(value.Any(c=>char.IsWhiteSpace(c)||char.IsControl(c)||c=='\\')||!Uri.TryCreate(new Uri(MovyConfig.Site+"/"),value,out var uri)||!Https(uri.AbsoluteUri))return "";
+        // Preserve Movy's /img/.../q50.webp routes. Only the existing proxy's
+        // output query is changed for WPF, which does not decode WebP natively.
+        return uri.AbsoluteUri.Replace("output=webp","output=jpg",StringComparison.OrdinalIgnoreCase);
+    }
 }
 public record Title(long Id, string Slug, string Name, string Poster = "", string Backdrop = "", string Description = "", string Year = "", double Rating = 0,
     double Resume = 0, double Duration = 0, long Updated = 0, bool NextEpisode = false, string AvailableOn = "")

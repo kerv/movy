@@ -3,5 +3,6 @@
   <ItemGroup>
     <ProjectReference Include="../Movy.Core/Movy.Core.csproj" />
     <Content Include="../../shared/fixtures/catalog.json" Link="Fixtures/catalog.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../shared/fixtures/artwork-urls.json" Link="Fixtures/artwork-urls.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

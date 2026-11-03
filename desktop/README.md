@@ -76,6 +76,13 @@ dotnet run --project desktop/Movy.Core.Tests -c Release
 pwsh -File desktop/build.ps1
 ```
 
+Optional read-only live artwork probe (uses the current public catalog and two
+image requests, not account data or video streams):
+
+```bash
+dotnet run --project desktop/Movy.Core.Tests -c Release -- --live-artwork
+```
+
 Output: `desktop/dist/win-x64/Movy.exe` and a versioned Windows ZIP. The build is
 self-contained, x64, and unsigned. Runtime license notices come from MSBuild's
 resolved runtime-pack directories, not a hardcoded runtime patch. The packaging
@@ -90,7 +97,9 @@ dotnet publish desktop/Movy.Desktop -c Release -r win-x64 --self-contained true 
 GitHub runs the core checks and a Windows smoke test (`Movy.exe --smoke-test`)
 before publishing. Smoke uses native fixture artwork and generated silent WAV
 audio, checks a guest WebView2 account connection, mpv IPC/seek/pause/sync, and
-exports a native Home preview. It does **not** prove real Movy account login,
+exports a native Home preview. It also verifies a relative artwork HTTP request
+and WPF bitmap decoding using a generated PNG response. It does **not** prove
+real Movy account login,
 source resolution, video decoding, or hardware A/V synchronization; those require
 Windows/device testing. Smoke mode is for a fresh test profile, not everyday use.
 
