@@ -502,12 +502,8 @@ public class NativeActivity extends android.app.Activity {
         if(request==410&&result==RESULT_OK&&data!=null&&detailTitle!=null){
             CatalogClient.Title title=detailTitle;int s=data.getIntExtra("season",1),e=data.getIntExtra("episode",1);
             returnFromPlayer=false;showDetail(title);int token=generation;
-            CatalogClient.episodes(title.id,s,(items,error)->{
-                if(token!=generation)return;
-                if(error!=null){error("Couldn’t load the next episode.",()->showDetail(title));return;}
-                if(e<=items.length())play(title,s,e,false);
-                else CatalogClient.episodes(title.id,s+1,(next,nextError)->{if(token!=generation)return;if(nextError==null&&next.length()>0)play(title,s+1,1,false);else Toast.makeText(this,"You’ve reached the end of the available episodes.",Toast.LENGTH_LONG).show();});
-            });
+            // PlayerActivity already resolved the actual episode number and air date.
+            if(token==generation)play(title,s,e,false);
         }
     }
     @Override protected void onDestroy(){if(sidebarAnimation!=null)sidebarAnimation.cancel();cancelResolver();if(searchDebouncer!=null)searchDebouncer.cancel();if(accountClient!=null)accountClient.close();super.onDestroy();}

@@ -33,6 +33,29 @@ const { chromium } = require('playwright');
     await page.waitForTimeout(600);
     assert.deepEqual(await page.evaluate(() => window.clicks), ['uhd']);
     console.log('PASS resolver selects the highest watch rendition once, without clicking trailer/catalogue Play');
+    for (const [preference, expected] of [[0, []], [720, ['sd']], [1080, ['hd']], [-1, ['uhd']]]) {
+      const fixture = await browser.newPage();
+      await fixture.setContent('<div id="vp-shell"><button id="sd">720p</button><button id="hd">1080p</button><button id="uhd">2160p</button></div>');
+      await fixture.evaluate(preference => {
+        window.__movyNativeQuality = preference; window.clicks = [];
+        document.addEventListener('click', e => window.clicks.push(e.target.id));
+      }, preference);
+      await fixture.evaluate(source);
+      await fixture.waitForTimeout(1000);
+      assert.deepEqual(await fixture.evaluate(() => window.clicks), expected);
+      await fixture.close();
+    }
+    const lowest = await browser.newPage();
+    await lowest.setContent('<div id="vp-shell"><button id="uhd">2160p</button><button id="hd">1080p</button></div>');
+    await lowest.evaluate(() => {
+      window.__movyNativeQuality = 720; window.clicks = [];
+      document.addEventListener('click', e => window.clicks.push(e.target.id));
+    });
+    await lowest.evaluate(source);
+    await lowest.waitForTimeout(1000);
+    assert.deepEqual(await lowest.evaluate(() => window.clicks), ['hd']);
+    await lowest.close();
+    console.log('PASS Auto avoids forced quality; caps choose the best fit or lowest available fallback');
     for (const requested of ['Boise', 'Miami', 'Missing server']) {
       const fixture = await browser.newPage();
       await fixture.setContent('<button id="trailer">Play</button><div id="vp-shell"><button id="miami" class="bg-white/[0.14]"><img src="/flags/us.svg" alt="Miami">Miami</button><button id="boise"><img src="/flags/us.svg" alt="Boise">Boise</button><button id="uhd">2160p</button></div>');

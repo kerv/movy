@@ -48,11 +48,33 @@ final class PlaybackStore {
     boolean dismissed(CatalogClient.Title title,String scope){return prefs.getBoolean("hidden:"+scope+":"+titleKey(title.slug),false);}
     void dismiss(CatalogClient.Title title,String scope){String root=titleKey(title.slug);SharedPreferences.Editor edit=prefs.edit().putBoolean("hidden:local:"+root,true).putBoolean("hidden:"+scope+":"+root,true).remove("next:"+root).remove("pending_next:"+root);
         for(String key:prefs.getAll().keySet())if(key.startsWith("resume:")&&titleKey(key.substring(7)).equals(root))edit.remove(key);edit.apply();}
-    void queueNext(CatalogClient.Title completed,NextEpisodeFinder.Next next){String root=titleKey(completed.slug);try{JSONObject pending=new JSONObject(prefs.getString("pending_next:"+root,"{}"));if(!completed.slug.equals(pending.optString("slug")))return;SharedPreferences.Editor edit=prefs.edit().remove("pending_next:"+root);if(next!=null){JSONObject item=new JSONObject(encode(completed));item.put("slug",next.key);item.put("availableOn",next.date);item.put("nextEpisode",true);item.put("resumeMs",0);edit.putString("next:"+root,item.toString());}edit.apply();}catch(Exception ignored){}}
+    void queueNext(CatalogClient.Title completed,NextEpisodeFinder.Next next){
+        String root=titleKey(completed.slug);
+        try{
+            JSONObject pending=new JSONObject(prefs.getString("pending_next:"+root,"{}"));
+            if(!completed.slug.equals(pending.optString("slug")))return;
+            SharedPreferences.Editor edit=prefs.edit();
+            if(next==null){
+                // Metadata for an ongoing series may not announce the next episode yet.
+                pending.put("checkAfter",System.currentTimeMillis()+6*60*60*1000L);
+                edit.putString("pending_next:"+root,pending.toString());
+            }else{
+                edit.remove("pending_next:"+root);
+                JSONObject item=new JSONObject(encode(completed));item.put("slug",next.key);
+                item.put("availableOn",next.date);item.put("nextEpisode",true);item.put("resumeMs",0);
+                edit.putString("next:"+root,item.toString());
+            }
+            edit.apply();
+        }catch(Exception ignored){}
+    }
     List<CatalogClient.Title> titles(String prefix) {
         ArrayList<JSONObject> items = new ArrayList<>();
         for (String key : prefs.getAll().keySet()) if (key.startsWith(prefix)) {
-            try { items.add(new JSONObject(prefs.getString(key, "{}"))); } catch (Exception ignored) { }
+            try {
+                JSONObject item=new JSONObject(prefs.getString(key,"{}"));
+                if(prefix.equals("pending_next:")&&item.optLong("checkAfter")>System.currentTimeMillis())continue;
+                items.add(item);
+            } catch (Exception ignored) { }
         }
         Collections.sort(items, (a,b) -> Long.compare(b.optLong("updated"), a.optLong("updated")));
         ArrayList<CatalogClient.Title> titles = new ArrayList<>();

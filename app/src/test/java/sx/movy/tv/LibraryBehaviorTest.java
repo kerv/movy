@@ -40,6 +40,24 @@ public class LibraryBehaviorTest {
     @Test public void recentActivityIsBoundedWithoutLimitingMyList()throws Exception{
         PlaybackStore store=new PlaybackStore(Robolectric.buildActivity(NativeActivity.class).get());for(int i=1;i<=45;i++){CatalogClient.Title title=title("/movie/"+i);store.progress(title.slug,title.title,"",120000,7200000);store.toggle(title);}assertEquals(PlaybackStore.RECENT_LIMIT,store.titles("resume:").size());assertEquals(PlaybackStore.RECENT_LIMIT,store.titles("history:").size());assertEquals(45,store.titles("saved:").size());
     }
+    @Test public void unannouncedNextEpisodeIsRetriedAfterBackoffAndCanBeDismissed()throws Exception{
+        NativeActivity activity=Robolectric.buildActivity(NativeActivity.class).get();
+        PlaybackStore store=new PlaybackStore(activity);CatalogClient.Title completed=title("/tv/10/1/1");
+        store.progress(completed.slug,completed.title,"",3599000,3600000);
+        store.queueNext(completed,null);
+        assertTrue(store.titles("pending_next:").isEmpty());
+        android.content.SharedPreferences prefs=activity.getSharedPreferences("native_library",android.content.Context.MODE_PRIVATE);
+        String key="pending_next:/tv/10";JSONObject pending=new JSONObject(prefs.getString(key,"{}"));
+        assertEquals(completed.slug,pending.getString("slug"));
+        prefs.edit().putString(key,pending.put("checkAfter",0).toString()).commit();
+        assertEquals(1,store.titles("pending_next:").size());
+        store.queueNext(completed,new NextEpisodeFinder.Next("/tv/10/1/2","2020-01-01"));
+        assertEquals(1,store.titles("next:").size());assertFalse(prefs.contains(key));
+        store.progress("/tv/10/1/2",completed.title,"",3599000,3600000);
+        CatalogClient.Title second=title("/tv/10/1/2");store.queueNext(second,null);store.dismiss(second,"account:one");
+        store.queueNext(second,new NextEpisodeFinder.Next("/tv/10/1/3","2020-01-01"));
+        assertTrue(store.titles("next:").isEmpty());
+    }
     @Test public void episodeFinderUsesActualNumbersAndDateNotArrayLength()throws Exception{
         JSONArray episodes=new JSONArray("[{\"episode_number\":5,\"air_date\":\"2020-01-01\"},{\"episode_number\":2,\"air_date\":\"2020-01-01\"},{\"episode_number\":3,\"air_date\":\"2099-01-01\"}]");JSONObject next=NextEpisodeFinder.following(episodes,2);assertEquals(3,next.getInt("episode_number"));assertFalse(NextEpisodeFinder.released(next,"2026-10-12"));assertNull(NextEpisodeFinder.following(episodes,5));assertEquals("/tv/10/2/3",NextEpisodeFinder.candidate(title("/tv/10/1/10"),2,next).key);
     }
